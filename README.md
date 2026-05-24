@@ -1,5 +1,5 @@
-# VoIP Platform Modernization
-## ifonix — FreeSWITCH + Lua + FastAPI + AWS
+# VoIP Platform and Test Lab Project
+## FreeSWITCH + Lua + FastAPI + AWS
 
 ### Quick Start for Claude Code
 
@@ -19,51 +19,6 @@ code voip-platform/
 # Install Claude Code extension or use CLI
 # claude --dangerously-skip-permissions (for full file access)
 ```
-
-### How to Run Each Phase
-
-**Phase 0 — Legacy Audit (START HERE):**
-```
-Claude, read .claude/prompts/01-analyze-legacy.md and execute it fully.
-```
-
-**Phase 1–2 — Build FastAPI:**
-```
-Claude, read .claude/prompts/02-build-fastapi.md and execute it.
-The Phase 0 audit is in docs/legacy-audit/.
-```
-
-**Phase 3 — Lua Scripts:**
-```
-Claude, read .claude/prompts/03-migrate-perl-to-lua.md and execute it.
-Reference docs/legacy-audit/sofia-analysis.md for legacy behavior.
-```
-
-**Phase 4 — Billing Worker:**
-```
-Claude, read .claude/prompts/04-build-billing-worker.md and execute it.
-```
-
-**Phase 5 — Dockerize:**
-```
-Claude, read .claude/prompts/05-dockerize.md and execute it.
-```
-
-**Phase 6 — AWS CDK:**
-```
-Claude, read .claude/prompts/06-build-cdk.md and execute it.
-```
-
-**Phase 7–8 — CI/CD + Monitoring:**
-```
-Claude, read .claude/prompts/07-cicd-monitoring.md and execute it.
-```
-
-**Phase 9 — Cutover:**
-```
-Claude, read .claude/prompts/08-cutover-plan.md and produce all cutover documents.
-```
-
 ---
 
 ## Project Structure
@@ -75,47 +30,12 @@ voip-platform/
 │
 ├── .claude/
 │   ├── context/
-│   │   ├── architecture.md            ← System design and component responsibilities
-│   │   ├── legacy-system.md           ← Legacy codebase locations and known behavior
-│   │   ├── telecom-rules.md           ← Non-negotiable telecom constraints
-│   │   ├── coding-standards.md        ← Python, Lua, CDK standards
-│   │   ├── migration-goals.md         ← What success looks like, risk register
-│   │   └── aws-target.md             ← AWS services, CDK structure, cost estimates
 │   │
 │   ├── prompts/
-│   │   ├── 01-analyze-legacy.md       ← Phase 0: Audit Sofia + Sentinel
-│   │   ├── 02-build-fastapi.md        ← Phase 1–2: FastAPI backend
-│   │   ├── 03-migrate-perl-to-lua.md  ← Phase 3: Lua dialplan scripts
-│   │   ├── 04-build-billing-worker.md ← Phase 4: ESL billing worker
-│   │   ├── 05-dockerize.md            ← Phase 5: Docker + compose
-│   │   ├── 06-build-cdk.md            ← Phase 6: AWS infrastructure
-│   │   ├── 07-cicd-monitoring.md      ← Phase 7–8: GitHub Actions + Grafana
-│   │   └── 08-cutover-plan.md         ← Phase 9: Traffic migration
 │   │
 │   └── outputs/                       ← Generated docs go here
 │
 ├── docs/
-│   ├── legacy-audit/                  ← Phase 0 output
-│   │   ├── sofia-analysis.md
-│   │   ├── sentinel-analysis.md
-│   │   ├── schema-map.md
-│   │   ├── migration-equivalence.md
-│   │   └── risk-findings.md
-│   ├── cutover/                       ← Phase 9 output
-│   │   ├── pre-cutover-checklist.md
-│   │   ├── shadow-mode-results.md
-│   │   ├── migration-steps.md
-│   │   ├── rollback-procedure.md
-│   │   └── post-cutover-verification.md
-│   ├── runbooks/
-│   │   ├── freeswitch-restart.md
-│   │   ├── billing-worker-restart.md
-│   │   ├── credit-discrepancy.md
-│   │   └── voxbone-trunk-down.md
-│   └── adr/                           ← Architecture Decision Records
-│       ├── 001-lua-over-python-in-freeswitch.md
-│       ├── 002-redis-atomic-credit.md
-│       └── 003-freeswitch-on-ec2-not-fargate.md
 │
 ├── freeswitch/
 │   ├── Dockerfile

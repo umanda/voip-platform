@@ -193,8 +193,9 @@ services:
       - POSTGRES_PASSWORD=labpass
     volumes:
       - postgres-lab-data:/var/lib/postgresql/data
-      # NOTE: seed-lab-data.sql is NOT loaded here because tables don't exist
-      # until Alembic migrations run. setup-lab.sh seeds data after migrations.
+      # init.sql creates the base schema on first start (empty data volume).
+      # Runs before setup-lab.sh, so tables exist when Alembic + seed run.
+      - ../../scripts/db/init.sql:/docker-entrypoint-initdb.d/00-init.sql
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dev_ifx -d galaxy_2"]

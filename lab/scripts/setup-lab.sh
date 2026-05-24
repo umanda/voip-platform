@@ -124,17 +124,29 @@ timeout 60 bash -c "until docker exec ${PG_CTR} pg_isready -U dev_ifx -d galaxy_
 print_ok "PostgreSQL is ready (container: ${PG_CTR})"
 print_ok "Redis is running (container: ${REDIS_CTR})"
 
-# ── Step 5: Run Alembic migrations ────────────────────────────────────────────
+# ── Step 5: Apply base schema + run Alembic migrations ────────────────────────
 print_header "Running Database Migrations"
+
+# init.sql is also mounted to initdb.d in docker-compose.lab.yml so it runs
+# automatically on first postgres start with an empty volume.  We run it here
+# too (explicitly, before alembic) to handle resumed sessions where initdb.d
+# already ran but the schema was lost, or where timing caused it to be skipped.
+# init.sql uses CREATE TABLE IF NOT EXISTS / ON CONFLICT DO NOTHING, so it is
+# safe to run multiple times.
+echo "  Applying base schema (init.sql)..."
+docker exec -i "${PG_CTR}" psql -U dev_ifx -d galaxy_2 \
+    < "${REPO_ROOT}/scripts/db/init.sql" 2>&1 \
+    | grep -vE '^$|NOTICE|already exists|^SET$|^CREATE EXTENSION$' || true
+print_ok "Base schema applied (init.sql)"
 
 ${DC} run --rm api alembic upgrade head
 print_ok "Alembic migrations applied"
 
-# ── Step 6: Seed database (MUST run AFTER migrations create the tables) ────────
+# ── Step 6: Seed database (lab-specific data on top of base schema) ────────────
 print_header "Seeding Database (galaxy_2)"
 
-# Run the seed SQL against the lab postgres container directly.
-# This avoids the initdb.d timing problem (initdb.d runs before Alembic).
+# Overwrite base schema defaults with lab-specific values (correct DIDs, rates).
+# seed-lab-data.sql uses ON CONFLICT DO UPDATE so it is idempotent.
 docker exec -i "${PG_CTR}" psql -U dev_ifx -d galaxy_2 < "${SCRIPT_DIR}/seed-lab-data.sql"
 print_ok "Seed data loaded into galaxy_2"
 print_ok "  credits_customers: 4 test accounts (IDs 1-4)"
@@ -236,22 +248,13 @@ Commands:
   make -f lab/Makefile.lab sngrep          # SIP call tracer
 
 Lab API:      http://localhost:8001
-Lab Postgres: localhost:5433  (user: dev_ifx  pass: labpass  db: galaxy_2)
+Lab Postgres: localhost:5434  (user: dev_ifx  pass: labpass  db: galaxy_2)
 Lab Redis:    localhost:6380
 
 EOF
 
-# Run from the repo root: bash lab/scripts/setup-lab.sh
-# Or from lab/ directory: bash scripts/setup-lab.sh
-#
-# What this does:
-#   1. Checks prerequisites (Docker, fs_cli, sngrep)
-#   2. Creates .env.lab if missing
-#   3. Starts PostgreSQL and Redis
-#   4. Runs Alembic database migrations
-#   5. Seeds Redis credit cache (credit_service.py CREDIT_SCALE = 100_000)
-#   6. Starts all remaining services
-#   7. Prints registration info for IP phones
+exit 0
+# ── Dead code below this line — kept for reference only, never executed ──────
 
 set -euo pipefail
 

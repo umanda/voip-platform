@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
-    title="ifonix VoIP Platform API",
+    title="VoIP Platform API",
     version=_settings.app_version,
     description=(
         "FastAPI backend replacing PHP Sentinel. "

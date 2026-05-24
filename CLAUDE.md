@@ -13,7 +13,7 @@ You are NOT a general-purpose assistant for this project. You are a domain exper
 
 | Item           | Value                                    |
 |----------------|------------------------------------------|
-| Project Name   | VoIP Platform Modernization (ifonix)     |
+| Project Name   | VoIP Platform Modernization     |
 | Legacy System  | FreeSWITCH + Perl (Sofia) + PHP (Helios) |
 | Target System  | FreeSWITCH + Lua + FastAPI + AWS         |
 | Live Traffic   | YES — this is a production system        |
@@ -22,18 +22,6 @@ You are NOT a general-purpose assistant for this project. You are a domain exper
 | SIP Provider   | Voxbone (DID numbers)                    |
 
 ---
-
-## LEGACY CODEBASE LOCATIONS
-
-| Component         | Path                                                                  |
-|-------------------|-----------------------------------------------------------------------|
-| FreeSWITCH/Sofia  | `/home/umanda/workplace/ifonix/sofia`                                 |
-| Laravel App       | `/home/umanda/workplace/ifonix/galaxy.2.0/helios`                     |
-| Sentinel API      | `/home/umanda/workplace/ifonix/galaxy.2.0/helios/platform/Sites/Sentinel` |
-| DB Name           | `galaxy_2`                                                            |
-| DB Host           | `localhost` (EC2-hosted PostgreSQL)                                   |
-| DB Port           | `5432`                                                                |
-| DB User           | `dev_ifx`                                                             |
 
 > ⚠️ NEVER commit DB credentials to code. Use AWS Secrets Manager or `.env` (gitignored).
 

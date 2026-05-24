@@ -29,7 +29,7 @@ RUN apk add --no-cache \
 # ── Stage 2: runtime — minimal production image ──────────────────────────────
 FROM python:3.11-alpine AS runtime
 
-LABEL org.opencontainers.image.title="ifonix VoIP Platform API" \
+LABEL org.opencontainers.image.title="VoIP Platform API" \
       org.opencontainers.image.description="FastAPI backend replacing PHP Sentinel" \
       org.opencontainers.image.version="1.0.0"
 
