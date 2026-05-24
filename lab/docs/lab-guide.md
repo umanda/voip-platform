@@ -22,14 +22,14 @@ IP Phone 1 (ext 1001)             IP Phone 2 (ext 1002) ← "consultant"
         │    :5060 — internal profile (phones + ext)       │
         │    :5080 — external profile (carrier trunk)      │
         │    :8021 — ESL (billing worker)                  │
-        │    Lua scripts → HTTP → FastAPI :8000            │
+        │    Lua scripts → HTTP → FastAPI :8001 (host)   │
         │                                                 │
-        │  Docker bridge 172.20.0.0/24:                   │
-        │    Asterisk        172.20.0.50  ← fake carrier  │
-        │    FastAPI         172.20.0.20                  │
-        │    Billing Worker  172.20.0.25                  │
-        │    PostgreSQL      172.20.0.30                  │
-        │    Redis           172.20.0.40                  │
+        │  Docker bridge 172.28.0.0/24:                   │
+        │    Asterisk        172.28.0.50  ← fake carrier  │
+        │    FastAPI         172.28.0.20  :8001 (host)    │
+        │    Billing Worker  172.28.0.25                  │
+        │    PostgreSQL      172.28.0.30  :5434 (host)    │
+        │    Redis           172.28.0.40  :6380 (host)    │
         └─────────────────────────────────────────────────┘
 ```
 
@@ -148,14 +148,14 @@ These are seeded into the PostgreSQL `credits_customers` and `site_ivr_numbers` 
 | DID | Credit Code (PIN) | Credit | Expected Result |
 |---|---|---|---|
 | `+18001000001` | `12341001` | 1000.00 EUR | Call connects ✓ |
-| `+18001000002` | `12341002` | 1.20 EUR | Cuts at ~2 minutes |
+| `+18001000002` | `12341002` | 0.05 EUR | Cuts at ~2 minutes |
 | `+18001000003` | `12341003` | 0.00 EUR | Rejected before ringing |
 | `+18001000004` | `12341004` | 500.00 EUR (blocked) | Rejected — account blocked |
 
 **Consultant (Phone 2 — ext 1002):**
 - All test DIDs route to consultant ID 1
 - Phone number: `1002` (routes to Fanvil Phone 2 via Asterisk → FS internal)
-- Rate: EUR 0.02 per minute (so Beta 1.20 EUR = ~60 billing seconds = ~2 minutes talk time)
+- Rate: EUR 0.02 per minute base (0.0242/min incl. 21% VAT) — Beta 0.05 EUR = ~124 s (~2 min) max call time
 
 ---
 
@@ -198,10 +198,10 @@ Tests billing ticks, Redis deduction, and graceful call termination (R-FLOW-02).
 **Verify:**
 ```bash
 # credit:2 should be exactly 0 (never negative — R-BILL-01)
-docker exec voip-redis redis-cli GET credit:2
+docker exec voip-lab-redis redis-cli GET credit:2
 # Should output: 0
 
-# CDR should show disposition=ANSWERED, cost close to 1.20 EUR
+# CDR should show disposition=ANSWERED, cost close to 0.05 EUR
 make -f lab/Makefile.lab watch-cdrs
 ```
 
@@ -251,9 +251,9 @@ If it goes negative: atomic Redis Lua script in `credit_service.py` has a bug.
 
 ```bash
 # Reset Beta account credit first
-docker exec voip-redis redis-cli SET credit:2 120000  # 1.20 EUR
-psql postgresql://dev_ifx:labpass@localhost:5432/galaxy_2 \
-  -c "UPDATE credits_customers SET current_credits=1.20000 WHERE id=2;"
+docker exec voip-lab-redis redis-cli SET credit:2 5000  # 0.05 EUR
+psql postgresql://dev_ifx:labpass@localhost:5434/galaxy_2 \
+  -c "UPDATE credits_customers SET current_credits=0.05000 WHERE id=2;"
 
 # Run test
 make -f lab/Makefile.lab sipp-credit-exhaustion
@@ -316,8 +316,9 @@ RTP if enabled, enable port reuse.
 make -f lab/Makefile.lab logs-api
 
 # Trace the authorize request
-curl -s http://localhost:8000/v1/call/authorize \
+curl -s http://localhost:8001/v1/call/authorize \
   -H "Content-Type: application/json" \
+  -H "X-Internal-Token: <your-INTERNAL_TOKEN>" \
   -d '{"caller_id": "+15005550001", "dialed_number": "18001000001",
        "account_token": "12341001", "inbound_did": "+18001000001"}'
 ```
@@ -336,7 +337,7 @@ make -f lab/Makefile.lab logs-billing
 make -f lab/Makefile.lab logs-billing
 # Look for: cdr_service errors
 # Check: statistics table manually
-docker exec voip-postgres psql -U dev_ifx -d galaxy_2 \
+docker exec voip-lab-postgres psql -U dev_ifx -d galaxy_2 \
   -c "SELECT id, unique_id, status, total_duration FROM statistics ORDER BY id DESC LIMIT 5;"
 ```
 
@@ -345,7 +346,7 @@ docker exec voip-postgres psql -U dev_ifx -d galaxy_2 \
 This is a **critical bug** (R-BILL-01 violation). The atomic Redis Lua script
 in `backend/app/services/credit_service.py` is not working correctly.
 
-1. Check Redis version: `docker exec voip-redis redis-cli INFO server | grep redis_version`
+1. Check Redis version: `docker exec voip-lab-redis redis-cli INFO server | grep redis_version`
 2. Check for Lua script loading errors in API logs
 3. Run the atomic deduction test: `pytest tests/test_credit.py -v`
 

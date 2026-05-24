@@ -107,7 +107,7 @@ print_ok "Environment variables validated"
 echo ""
 echo "Checking port availability..."
 
-for port in 5433 6380 8001 5080; do
+for port in 5434 6380 8001 5090; do
   if ss -tlnup 2>/dev/null | grep -q ":${port} "; then
     print_warn "Port ${port} already in use — lab service may fail to bind"
   else
@@ -149,8 +149,8 @@ print_header "Seeding Redis Credit Cache"
 docker exec "${REDIS_CTR}" redis-cli SET "credit:1" 100000000 >/dev/null
 print_ok "credit:1  = 100,000,000 units  (1000.00000 EUR — Alpha)"
 
-docker exec "${REDIS_CTR}" redis-cli SET "credit:2" 120000 >/dev/null
-print_ok "credit:2  =     120,000 units  (   1.20000 EUR — Beta)"
+docker exec "${REDIS_CTR}" redis-cli SET "credit:2" 5000 >/dev/null
+print_ok "credit:2  =       5,000 units  (   0.05000 EUR — Beta  ~2 min)"
 
 docker exec "${REDIS_CTR}" redis-cli SET "credit:3" 0 >/dev/null
 print_ok "credit:3  =           0 units  (   0.00000 EUR — Zero)"

@@ -66,9 +66,9 @@ VALUES
   -- Alpha: plenty of credit — calls will connect and run without issue
   (1, 1, '12341001', 1000.00000, 'eur', false, false),
 
-  -- Beta: just 1.20 EUR — enough for ~2 minutes at EUR 0.02/min (lab consultant rate)
+  -- Beta: 0.05 EUR — at EUR 0.02/min base + 21% VAT (0.0242/min charged) ≈ 124 s (~2 min)
   -- Use this to test billing ticks and credit exhaustion hangup (R-FLOW-02)
-  (2, 2, '12341002',    1.20000, 'eur', false, false),
+  (2, 2, '12341002',    0.05000, 'eur', false, false),
 
   -- Zero: no credit — FastAPI must reject the call before it connects (R-BILL-03)
   (3, 3, '12341003',    0.00000, 'eur', false, false),
@@ -91,7 +91,10 @@ VALUES
   (2, '18001000002', 1, 4, 1, 1),   -- DID for Beta  account (low credit)
   (3, '18001000003', 1, 4, 1, 1),   -- DID for Zero  account (zero credit)
   (4, '18001000004', 1, 4, 1, 1)    -- DID for Blocked account
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+  number      = EXCLUDED.number,
+  type_id     = EXCLUDED.type_id,
+  language_id = EXCLUDED.language_id;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 5. CONSULTANTS
@@ -103,7 +106,11 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO consultants (id, user_id, ivr_status, call_rate, currency_code, commission_percentage, is_blocked, is_deleted, provider_sequence)
 VALUES
   (1, 5, 1, 0.02000, 'eur', 50.00, false, false, 'asterisk-lab')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+  user_id          = EXCLUDED.user_id,
+  ivr_status       = EXCLUDED.ivr_status,
+  call_rate        = EXCLUDED.call_rate,
+  provider_sequence = EXCLUDED.provider_sequence;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 6. CONSULTANT_PHONE_NUMBERS
