@@ -5,6 +5,15 @@
 # FreeSWITCH = host network (required for RTP with physical Fanvil phones)
 # FastAPI + Billing Worker + PostgreSQL + Redis = same as production stack
 #
+# PORT MAPPING (avoids conflicts with any existing dev containers):
+#   Lab FastAPI  → host:8001   (portainer may occupy 8000)
+#   Lab Postgres → host:5433   (other postgres may occupy 5432)
+#   Lab Redis    → host:6380   (other redis may occupy 6379)
+#   Asterisk SIP → host:5080   (UDP+TCP, maps to container:5060)
+#
+# Container names use the "voip-lab-" prefix to avoid clashing with
+# any existing "voip-*" containers from other compose stacks.
+#
 # Quick start:
 #   cp .env.lab.example .env.lab && edit it
 #   bash scripts/setup-lab.sh
@@ -13,14 +22,6 @@
 #                        Transport: UDP  (TCP also enabled on internal profile)
 #                        Register expiry: 60s
 #                        Codec: PCMA (G.711a) first
-#
-# Architecture:
-#   Phones (1001-1005) ──register──► FreeSWITCH :5060  (host network)
-#   Phone dials DID ─────transfer──► FS default context (auth.lua)
-#   auth.lua ───HTTP────────────────► FastAPI :8000
-#   FS bridge ──asterisk-lab────────► Asterisk :5060 (172.20.0.50)
-#   Asterisk ──back-to-FS───────────► FreeSWITCH internal :5060 ──► ext 1002
-#   SIPp ───────────────────────────► Asterisk :5060 (--profile loadtest)
 
 version: "3.9"
 
@@ -41,17 +42,13 @@ services:
     build:
       context: ./asterisk
       dockerfile: Dockerfile
-    container_name: voip-asterisk
+    container_name: voip-lab-asterisk
     networks:
       voip-lab:
         ipv4_address: 172.20.0.50
     ports:
-      - "5080:5060/udp"   # SIP UDP — host:5080 maps to Asterisk:5060 inside
+      - "5080:5060/udp"   # SIP UDP — host:5080 maps to Asterisk container:5060
       - "5080:5060/tcp"   # SIP TCP
-    environment:
-      # FreeSWITCH is on host network — Asterisk reaches it via host-gateway
-      - FREESWITCH_SIP_PORT=5060    # FS internal SIP port
-      - FREESWITCH_EXT_PORT=5080    # FS external SIP port (inbound DIDs)
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Resolves to host machine IP (Docker Engine 20.10+)
     volumes:
@@ -62,6 +59,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
 
   # ─────────────────────────────────────────────────────────────────
   # FREESWITCH — Host network (REQUIRED for RTP with LAN IP phones)
@@ -69,26 +67,43 @@ services:
   #   - Internal SIP profile: port 5060 (phones register here)
   #   - External SIP profile: port 5080 (carrier trunk / Asterisk)
   #   - ESL: port 8021
+  #
+  # IMPORTANT: network_mode: host means NO extra_hosts or networks here.
+  # FS reaches the host's Docker bridge containers by their bridge IPs directly.
   # ─────────────────────────────────────────────────────────────────
   freeswitch:
     build:
       context: ../freeswitch
       dockerfile: Dockerfile
-      secrets:
-        - signalwire_token
-    container_name: voip-freeswitch
+      # NO secrets: section — uses Debian apt packages (Option B), no SignalWire token needed
+    container_name: voip-lab-freeswitch
     network_mode: host
     environment:
-      - API_BASE_URL=http://127.0.0.1:8000       # FastAPI port-mapped to host
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN}
+      # Entrypoint variable names (see freeswitch/docker-entrypoint.sh)
+      - VOIP_API_BASE_URL=http://127.0.0.1:8001    # FastAPI mapped to host:8001
+      - VOIP_INTERNAL_TOKEN=${INTERNAL_TOKEN}
       - FS_ESL_PASSWORD=${FS_ESL_PASSWORD:-ClueCon}
-      # Asterisk is on Docker bridge; host-net FS reaches it at its Docker IP
-      - ASTERISK_IP=172.20.0.50
-      - ASTERISK_PORT=5060
-      - VOIP_API_BASE_URL=http://127.0.0.1:8000
+      - VOIP_DEFAULT_GATEWAY=asterisk-lab
+      # Codec: PCMA first for Fanvil phones (overrides template default PCMU,PCMA)
+      - VOIP_GLOBAL_CODEC_PREFS=PCMA,PCMU,G729,OPUS
+      - VOIP_OUTBOUND_CODEC_PREFS=PCMA,PCMU
+      # Leave Voxbone vars blank — not needed in lab
+      - VOXBONE_USERNAME=lab
+      - VOXBONE_PASSWORD=lab
+      - VOXBONE_REALM=172.20.0.50
+      - VOXBONE_PROXY=172.20.0.50
+      - RTP_START_PORT=16384
+      - RTP_END_PORT=32768
     volumes:
+      # Lua scripts — hot reload from host filesystem
       - ../freeswitch/lua:/usr/share/freeswitch/scripts
-      - ./freeswitch-lab/conf:/etc/freeswitch
+      # Lab-specific config overrides (individual files only — preserves base image config)
+      - ./freeswitch-lab/conf/vars.xml.tpl:/etc/freeswitch/vars.xml.tpl
+      - ./freeswitch-lab/conf/sip_profiles/internal.xml:/etc/freeswitch/sip_profiles/internal.xml
+      - ./freeswitch-lab/conf/sip_profiles/external.xml:/etc/freeswitch/sip_profiles/external.xml
+      - ./freeswitch-lab/conf/dialplan/default.xml:/etc/freeswitch/dialplan/default.xml
+      - ./freeswitch-lab/conf/dialplan/internal.xml:/etc/freeswitch/dialplan/internal.xml
+      - ./freeswitch-lab/conf/directory/default:/etc/freeswitch/directory/default
       - freeswitch-logs:/var/log/freeswitch
     restart: unless-stopped
     depends_on:
@@ -96,17 +111,18 @@ services:
 
   # ─────────────────────────────────────────────────────────────────
   # FASTAPI — Auth + billing API
+  # host:8001 → avoids conflict with portainer on 8000
   # ─────────────────────────────────────────────────────────────────
   api:
     build:
       context: ../backend
       dockerfile: Dockerfile
-    container_name: voip-api
+    container_name: voip-lab-api
     networks:
       voip-lab:
         ipv4_address: 172.20.0.20
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://dev_ifx:labpass@172.20.0.30:5432/galaxy_2
       - REDIS_URL=redis://172.20.0.40:6379
@@ -130,18 +146,18 @@ services:
 
   # ─────────────────────────────────────────────────────────────────
   # BILLING WORKER — ESL event consumer + CDR writer
-  # Connects to FreeSWITCH on 127.0.0.1:8021 (FS is on host net)
+  # Connects to FreeSWITCH ESL via host.docker.internal (FS on host net)
   # ─────────────────────────────────────────────────────────────────
   billing-worker:
     build:
       context: ../backend
       dockerfile: Dockerfile.worker
-    container_name: voip-billing-worker
+    container_name: voip-lab-billing-worker
     networks:
       voip-lab:
         ipv4_address: 172.20.0.25
     extra_hosts:
-      - "host.docker.internal:host-gateway"   # FreeSWITCH ESL on host
+      - "host.docker.internal:host-gateway"   # FreeSWITCH ESL reachable at host IP
     environment:
       - DATABASE_URL=postgresql+asyncpg://dev_ifx:labpass@172.20.0.30:5432/galaxy_2
       - REDIS_URL=redis://172.20.0.40:6379
@@ -157,23 +173,24 @@ services:
     restart: unless-stopped
 
   # ─────────────────────────────────────────────────────────────────
-  # POSTGRESQL
+  # POSTGRESQL — host:5433 to avoid conflict with any existing postgres:5432
   # ─────────────────────────────────────────────────────────────────
   postgres:
     image: postgres:15
-    container_name: voip-postgres
+    container_name: voip-lab-postgres
     networks:
       voip-lab:
         ipv4_address: 172.20.0.30
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       - POSTGRES_DB=galaxy_2
       - POSTGRES_USER=dev_ifx
       - POSTGRES_PASSWORD=labpass
     volumes:
       - postgres-lab-data:/var/lib/postgresql/data
-      - ./scripts/seed-lab-data.sql:/docker-entrypoint-initdb.d/99-seed.sql
+      # NOTE: seed-lab-data.sql is NOT loaded here because tables don't exist
+      # until Alembic migrations run. setup-lab.sh seeds data after migrations.
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dev_ifx -d galaxy_2"]
@@ -182,16 +199,16 @@ services:
       retries: 10
 
   # ─────────────────────────────────────────────────────────────────
-  # REDIS
+  # REDIS — host:6380 to avoid conflict with any existing redis:6379
   # ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: voip-redis
+    container_name: voip-lab-redis
     networks:
       voip-lab:
         ipv4_address: 172.20.0.40
     ports:
-      - "6379:6379"
+      - "6380:6379"
     command: redis-server --appendonly yes --loglevel verbose
     volumes:
       - redis-lab-data:/data
@@ -199,11 +216,10 @@ services:
 
   # ─────────────────────────────────────────────────────────────────
   # SIPP — Load testing (only with --profile loadtest)
-  # Usage: make -f Makefile.lab sipp-concurrent
   # ─────────────────────────────────────────────────────────────────
   sipp:
     image: ctaloi/sipp:latest
-    container_name: voip-sipp
+    container_name: voip-lab-sipp
     networks:
       voip-lab:
         ipv4_address: 172.20.0.60
@@ -214,11 +230,11 @@ services:
     tty: true
 
   # ─────────────────────────────────────────────────────────────────
-  # PROMETHEUS (optional monitoring — --profile monitoring)
+  # PROMETHEUS (optional — --profile monitoring)
   # ─────────────────────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:latest
-    container_name: voip-prometheus
+    container_name: voip-lab-prometheus
     networks:
       voip-lab:
         ipv4_address: 172.20.0.71
@@ -229,11 +245,11 @@ services:
     profiles: ["monitoring"]
 
   # ─────────────────────────────────────────────────────────────────
-  # GRAFANA (optional monitoring — --profile monitoring)
+  # GRAFANA (optional — --profile monitoring)
   # ─────────────────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:latest
-    container_name: voip-grafana
+    container_name: voip-lab-grafana
     networks:
       voip-lab:
         ipv4_address: 172.20.0.70
@@ -252,7 +268,3 @@ volumes:
   redis-lab-data:
   freeswitch-logs:
   grafana-lab-data:
-
-secrets:
-  signalwire_token:
-    file: ../freeswitch/.signalwire_token

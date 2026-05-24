@@ -7,6 +7,12 @@
 DC = docker compose -f lab/docker-compose.lab.yml
 LAB_DIR = lab
 
+# Lab port assignments (avoid conflicts with other dev containers)
+LAB_PG_PORT  = 5433
+LAB_API_PORT = 8001
+LAB_REDIS_CTR = voip-lab-redis
+LAB_PG_CTR    = voip-lab-postgres
+
 .PHONY: lab lab-monitor lab-load reset stop \
         fs-cli calls reload-lua \
         sipp-basic sipp-concurrent sipp-credit-exhaustion \
@@ -50,26 +56,27 @@ reset:
 # ─────────────────────────────────────────
 
 ## Open FreeSWITCH console (fs_cli must be installed on host)
+## Install: sudo apt install freeswitch-cli  OR  build from source
 fs-cli:
-	fs_cli
+	fs_cli -H 127.0.0.1 -P 8021 -p $${FS_ESL_PASSWORD:-ClueCon}
 
 ## Show active calls in FreeSWITCH
 calls:
-	fs_cli -x "show calls"
+	fs_cli -H 127.0.0.1 -P 8021 -p $${FS_ESL_PASSWORD:-ClueCon} -x "show calls"
 
 ## Show registered SIP extensions
 sofia-status:
-	fs_cli -x "sofia status"
-	fs_cli -x "sofia status profile internal"
+	fs_cli -H 127.0.0.1 -P 8021 -p $${FS_ESL_PASSWORD:-ClueCon} -x "sofia status"
+	fs_cli -H 127.0.0.1 -P 8021 -p $${FS_ESL_PASSWORD:-ClueCon} -x "sofia status profile internal"
 
 ## Reload Lua scripts without restarting FreeSWITCH
 reload-lua:
-	fs_cli -x "reload mod_lua"
+	fs_cli -H 127.0.0.1 -P 8021 -p $${FS_ESL_PASSWORD:-ClueCon} -x "reload mod_lua"
 	@echo "✓ Lua scripts reloaded"
 
 ## Reload all dialplan XML
 reload-xml:
-	fs_cli -x "reloadxml"
+	fs_cli -H 127.0.0.1 -P 8021 -p $${FS_ESL_PASSWORD:-ClueCon} -x "reloadxml"
 	@echo "✓ XML reloaded"
 
 # ─────────────────────────────────────────
@@ -79,23 +86,23 @@ reload-xml:
 ## SIPp: single basic call test
 sipp-basic:
 	$(DC) --profile loadtest run --rm sipp \
-	  sipp 172.20.0.50 \
+	  sipp 172.20.0.50:5060 \
 	  -sf /scenarios/basic_call.xml \
-	  -l 1 -m 1 -r 1 -trace_msg
+	  -l 1 -m 1 -r 1 -trace_msg -p 5062
 
 ## SIPp: 10 concurrent calls (credit deduction stress test)
 sipp-concurrent:
 	$(DC) --profile loadtest run --rm sipp \
-	  sipp 172.20.0.50 \
+	  sipp 172.20.0.50:5060 \
 	  -sf /scenarios/concurrent_calls.xml \
-	  -l 10 -m 10 -r 2 -trace_msg
+	  -l 10 -m 10 -r 2 -trace_msg -p 5062
 
 ## SIPp: credit exhaustion test (account Beta — 1.20 credit)
 sipp-credit-exhaustion:
 	$(DC) --profile loadtest run --rm sipp \
-	  sipp 172.20.0.50 \
+	  sipp 172.20.0.50:5060 \
 	  -sf /scenarios/credit_exhaustion.xml \
-	  -l 1 -m 1 -r 1 -trace_msg
+	  -l 1 -m 1 -r 1 -trace_msg -p 5062
 
 # ─────────────────────────────────────────
 # MONITORING / DEBUGGING
@@ -108,14 +115,14 @@ sngrep:
 ## Watch Redis credit balances in real time
 ## credit:1=Alpha  credit:2=Beta  credit:3=Zero
 watch-credit:
-	watch -n1 'redis-cli MGET credit:1 credit:2 credit:3 | paste - - - | \
+	watch -n1 'docker exec $(LAB_REDIS_CTR) redis-cli MGET credit:1 credit:2 credit:3 | paste - - - | \
 	  awk "BEGIN{print \"ID  Credits(units) = Credits\"} \
 	  {printf \"  1  %-14s = %.5f EUR\n  2  %-14s = %.5f EUR\n  3  %-14s = %.5f EUR\n\", \
 	  \$$1, \$$1/100000, \$$2, \$$2/100000, \$$3, \$$3/100000}"'
 
 ## Watch CDR table (statistics) for new call records
 watch-cdrs:
-	watch -n2 'psql postgresql://dev_ifx:labpass@localhost:5432/galaxy_2 -c \
+	watch -n2 'docker exec $(LAB_PG_CTR) psql -U dev_ifx -d galaxy_2 -c \
 	  "SELECT id, unique_id, src_number, dst_number, \
 	          status, total_duration, conversation_duration, \
 	          credit_before, credit_after, credit_without_vat, \
@@ -125,7 +132,7 @@ watch-cdrs:
 
 ## Watch tracings (call event log)
 watch-tracings:
-	watch -n2 'psql postgresql://dev_ifx:labpass@localhost:5432/galaxy_2 -c \
+	watch -n2 'docker exec $(LAB_PG_CTR) psql -U dev_ifx -d galaxy_2 -c \
 	  "SELECT t.id, t.statistics_id, t.status, t.info, \
 	          t.credit_before, t.credit_after, t.timestamp \
 	   FROM tracings t \
@@ -135,9 +142,9 @@ watch-tracings:
 # LOGS
 # ─────────────────────────────────────────
 
-## FreeSWITCH logs (host — tail the log file)
+## FreeSWITCH logs (host — tail the log file, or use docker logs for the container)
 logs-fs:
-	tail -f /var/log/freeswitch/freeswitch.log
+	docker logs -f voip-lab-freeswitch 2>&1 || tail -f /var/log/freeswitch/freeswitch.log
 
 ## FastAPI logs
 logs-api:
@@ -163,7 +170,7 @@ logs:
 
 ## Open psql shell into lab DB
 db-shell:
-	$(DC) exec postgres psql -U dev_ifx -d galaxy_2
+	docker exec -it $(LAB_PG_CTR) psql -U dev_ifx -d galaxy_2
 
 ## Apply Alembic migrations
 db-migrate:
@@ -171,20 +178,20 @@ db-migrate:
 
 ## Reset DB data (preserves schema) and re-seed
 db-reseed:
-	$(DC) exec postgres psql -U dev_ifx -d galaxy_2 -c \
+	docker exec $(LAB_PG_CTR) psql -U dev_ifx -d galaxy_2 -c \
 	  "TRUNCATE statistics, tracings, consultant_ivr_numbers, \
 	   consultant_phone_numbers, consultant_statistics, \
 	   consultants, credits_customers, site_ivr_numbers, \
 	   ivr_known_users, users, countries RESTART IDENTITY CASCADE;"
-	$(DC) exec postgres psql -U dev_ifx -d galaxy_2 \
-	  -f /docker-entrypoint-initdb.d/99-seed.sql
+	docker exec -i $(LAB_PG_CTR) psql -U dev_ifx -d galaxy_2 \
+	  < $(LAB_DIR)/scripts/seed-lab-data.sql
 	@echo "✓ Lab data re-seeded"
 
 ## Seed Redis credit cache from DB
 redis-seed-credit:
-	docker exec voip-redis redis-cli SET "credit:1" 100000000
-	docker exec voip-redis redis-cli SET "credit:2" 120000
-	docker exec voip-redis redis-cli SET "credit:3" 0
+	docker exec $(LAB_REDIS_CTR) redis-cli SET "credit:1" 100000000
+	docker exec $(LAB_REDIS_CTR) redis-cli SET "credit:2" 120000
+	docker exec $(LAB_REDIS_CTR) redis-cli SET "credit:3" 0
 	@echo "✓ Redis credit cache seeded"
 	@echo "  credit:1  = 1000.00000 EUR (Alpha)"
 	@echo "  credit:2  =    1.20000 EUR (Beta — ~2min at 0.02/min)"
@@ -192,7 +199,7 @@ redis-seed-credit:
 
 ## Open redis-cli
 redis-cli:
-	docker exec -it voip-redis redis-cli
+	docker exec -it $(LAB_REDIS_CTR) redis-cli
 
 # ─────────────────────────────────────────
 # VERIFY
@@ -201,3 +208,7 @@ redis-cli:
 ## Run all health checks
 verify:
 	bash $(LAB_DIR)/scripts/verify-lab.sh
+
+## FastAPI logs (alias)
+logs-worker: logs-billing
+logs-api-lab: logs-api

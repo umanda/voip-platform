@@ -8,6 +8,247 @@
 #   2. Creates .env.lab if missing
 #   3. Starts PostgreSQL and Redis
 #   4. Runs Alembic database migrations
+#   5. Seeds galaxy_2 test data (after migrations, since tables must exist first)
+#   6. Seeds Redis credit cache (credit_service.py CREDIT_SCALE = 100_000)
+#   7. Starts all remaining services
+#   8. Prints registration info for IP phones
+#
+# Port assignments (no conflicts with existing dev containers):
+#   Lab Postgres → host:5433   Lab Redis → host:6380   Lab API → host:8001
+
+set -euo pipefail
+
+# ── Resolve paths ──────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LAB_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${LAB_DIR}/.." && pwd)"
+DC="docker compose -f ${LAB_DIR}/docker-compose.lab.yml"
+
+cd "${LAB_DIR}"
+
+# Container name constants (must match docker-compose.lab.yml)
+PG_CTR="voip-lab-postgres"
+REDIS_CTR="voip-lab-redis"
+ASTERISK_CTR="voip-lab-asterisk"
+API_CTR="voip-lab-api"
+
+# ─────────────────────────────────────────────────────────────────────────────
+print_header() {
+  echo ""
+  echo "════════════════════════════════════════════════════════════"
+  echo "  $1"
+  echo "════════════════════════════════════════════════════════════"
+}
+
+print_ok()   { echo "  ✓ $1"; }
+print_warn() { echo "  ⚠ $1"; }
+print_err()  { echo "  ✗ $1"; }
+
+# ─────────────────────────────────────────────────────────────────────────────
+print_header "VoIP Lab Setup — Ubuntu 22.04"
+
+# ── Step 1: Prerequisites ─────────────────────────────────────────────────────
+echo ""
+echo "Checking prerequisites..."
+
+if ! command -v docker &>/dev/null; then
+  print_err "Docker not found. Install: https://docs.docker.com/engine/install/ubuntu/"
+  exit 1
+fi
+print_ok "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
+
+if ! docker compose version &>/dev/null; then
+  print_err "docker compose v2 not found. Upgrade Docker Engine to 24+."
+  exit 1
+fi
+print_ok "docker compose $(docker compose version --short)"
+
+if command -v fs_cli &>/dev/null; then
+  print_ok "fs_cli found (FreeSWITCH console available)"
+else
+  print_warn "fs_cli not found — FreeSWITCH console unavailable"
+  print_warn "  Install: sudo apt install freeswitch-cli"
+fi
+
+if command -v sngrep &>/dev/null; then
+  print_ok "sngrep found (SIP tracer available)"
+else
+  print_warn "sngrep not installed. Run: sudo apt install sngrep"
+fi
+
+# ── Step 2: Environment file ──────────────────────────────────────────────────
+echo ""
+echo "Checking .env.lab..."
+
+if [ ! -f .env.lab ]; then
+  cp .env.lab.example .env.lab
+  print_ok "Created .env.lab from example"
+  print_warn "IMPORTANT: Edit .env.lab and set INTERNAL_TOKEN, FS_ESL_PASSWORD, INTERNAL_JWT_SECRET"
+  echo ""
+  echo "  Edit .env.lab now, then re-run this script."
+  exit 0
+else
+  print_ok ".env.lab exists"
+fi
+
+# Validate required variables
+set -a; source .env.lab; set +a
+if [[ "${INTERNAL_TOKEN:-change-me-lab-token}" == "change-me-lab-token" ]]; then
+  print_err "INTERNAL_TOKEN is still the default. Edit .env.lab first."
+  exit 1
+fi
+if [[ "${INTERNAL_JWT_SECRET:-change-me-at-least-32-chars-long-please}" == "change-me-at-least-32-chars-long-please" ]]; then
+  print_err "INTERNAL_JWT_SECRET is still the default. Edit .env.lab first."
+  exit 1
+fi
+print_ok "Environment variables validated"
+
+# ── Step 3: Check for port conflicts ──────────────────────────────────────────
+echo ""
+echo "Checking port availability..."
+
+for port in 5433 6380 8001 5080; do
+  if ss -tlnup 2>/dev/null | grep -q ":${port} "; then
+    print_warn "Port ${port} already in use — lab service may fail to bind"
+  else
+    print_ok "Port ${port} is free"
+  fi
+done
+
+# ── Step 4: Start core data services ──────────────────────────────────────────
+print_header "Starting PostgreSQL + Redis"
+
+${DC} up -d postgres redis
+echo "⏳ Waiting for PostgreSQL to be ready (port 5433)..."
+timeout 60 bash -c "until docker exec ${PG_CTR} pg_isready -U dev_ifx -d galaxy_2 &>/dev/null; do sleep 1; done"
+print_ok "PostgreSQL is ready (container: ${PG_CTR})"
+print_ok "Redis is running (container: ${REDIS_CTR})"
+
+# ── Step 5: Run Alembic migrations ────────────────────────────────────────────
+print_header "Running Database Migrations"
+
+${DC} run --rm api alembic upgrade head
+print_ok "Alembic migrations applied"
+
+# ── Step 6: Seed database (MUST run AFTER migrations create the tables) ────────
+print_header "Seeding Database (galaxy_2)"
+
+# Run the seed SQL against the lab postgres container directly.
+# This avoids the initdb.d timing problem (initdb.d runs before Alembic).
+docker exec -i "${PG_CTR}" psql -U dev_ifx -d galaxy_2 < "${SCRIPT_DIR}/seed-lab-data.sql"
+print_ok "Seed data loaded into galaxy_2"
+print_ok "  credits_customers: 4 test accounts (IDs 1-4)"
+print_ok "  site_ivr_numbers: 4 test DIDs"
+print_ok "  consultants: 1 lab consultant (phone: 1002)"
+
+# ── Step 7: Seed Redis credit cache ───────────────────────────────────────────
+print_header "Seeding Redis Credit Cache"
+
+# CREDIT_SCALE = 100_000 (from backend/app/services/credit_service.py)
+# 1 EUR credit = 100_000 integer units
+docker exec "${REDIS_CTR}" redis-cli SET "credit:1" 100000000 >/dev/null
+print_ok "credit:1  = 100,000,000 units  (1000.00000 EUR — Alpha)"
+
+docker exec "${REDIS_CTR}" redis-cli SET "credit:2" 120000 >/dev/null
+print_ok "credit:2  =     120,000 units  (   1.20000 EUR — Beta)"
+
+docker exec "${REDIS_CTR}" redis-cli SET "credit:3" 0 >/dev/null
+print_ok "credit:3  =           0 units  (   0.00000 EUR — Zero)"
+
+print_ok "credit:4  (not seeded — account is blocked)"
+
+# ── Step 8: Start all services ────────────────────────────────────────────────
+print_header "Starting All Lab Services"
+
+${DC} up -d
+echo "⏳ Waiting for services to start..."
+sleep 5
+
+# ── Step 9: Verify ────────────────────────────────────────────────────────────
+print_header "Verification"
+
+# FastAPI health (port 8001 on host)
+if curl -sf http://localhost:8001/health >/dev/null 2>&1; then
+  print_ok "FastAPI healthy (http://localhost:8001/health)"
+else
+  print_warn "FastAPI not yet responding — check: make -f lab/Makefile.lab logs-api"
+fi
+
+# Asterisk
+if docker exec "${ASTERISK_CTR}" asterisk -rx "sip show peers" >/dev/null 2>&1; then
+  print_ok "Asterisk running"
+else
+  print_warn "Asterisk not responding yet — check: make -f lab/Makefile.lab logs-asterisk"
+fi
+
+# PostgreSQL
+if docker exec "${PG_CTR}" pg_isready -U dev_ifx -d galaxy_2 >/dev/null 2>&1; then
+  print_ok "PostgreSQL running"
+fi
+
+# Redis
+if docker exec "${REDIS_CTR}" redis-cli PING >/dev/null 2>&1; then
+  print_ok "Redis running"
+fi
+
+# FreeSWITCH (host network — check docker logs)
+if docker logs voip-lab-freeswitch 2>&1 | grep -q "FreeSWITCH Started"; then
+  print_ok "FreeSWITCH started"
+elif command -v fs_cli &>/dev/null && fs_cli -H 127.0.0.1 -P 8021 -p "${FS_ESL_PASSWORD:-ClueCon}" -x "status" 2>/dev/null | grep -q "UP"; then
+  print_ok "FreeSWITCH running"
+else
+  print_warn "FreeSWITCH — check docker logs: docker logs voip-lab-freeswitch"
+fi
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+HOST_IP=$(ip route get 1 2>/dev/null | awk '{print $7; exit}' || hostname -I | awk '{print $1}')
+
+print_header "Lab Ready!"
+
+cat <<EOF
+
+Register your Fanvil IP phones:
+  SIP Server:   ${HOST_IP}
+  SIP Port:     5060
+  Transport:    UDP  (TCP also enabled)
+  Register Exp: 60s
+  Codec:        PCMA (G.711a) first, then PCMU
+
+  Phone 1:  ext 1001  password: 1001
+  Phone 2:  ext 1002  password: 1002  ← "consultant" (receives calls)
+
+Register softphones:
+  Linphone:   sip:1003@${HOST_IP}  password: 1003
+  Zoiper:     1004@${HOST_IP}:5060  password: 1004
+  MicroSIP:   1005@${HOST_IP}:5060  password: 1005
+
+Test DIDs (dial from any registered phone):
+  +18001000001  → Alpha  (1000 EUR)  PIN: 12341001  — call connects ✓
+  +18001000002  → Beta   (1.20 EUR)  PIN: 12341002  — cuts at ~2min
+  +18001000003  → Zero   (0.00 EUR)  PIN: 12341003  — rejected immediately
+  +18001000004  → Blocked (blocked)  PIN: 12341004  — rejected by FastAPI
+
+Commands:
+  make -f lab/Makefile.lab verify          # health check all components
+  make -f lab/Makefile.lab fs-cli          # FreeSWITCH console
+  make -f lab/Makefile.lab watch-credit    # live Redis credit display
+  make -f lab/Makefile.lab watch-cdrs      # live CDR (statistics) table
+  make -f lab/Makefile.lab sngrep          # SIP call tracer
+
+Lab API:      http://localhost:8001
+Lab Postgres: localhost:5433  (user: dev_ifx  pass: labpass  db: galaxy_2)
+Lab Redis:    localhost:6380
+
+EOF
+
+# Run from the repo root: bash lab/scripts/setup-lab.sh
+# Or from lab/ directory: bash scripts/setup-lab.sh
+#
+# What this does:
+#   1. Checks prerequisites (Docker, fs_cli, sngrep)
+#   2. Creates .env.lab if missing
+#   3. Starts PostgreSQL and Redis
+#   4. Runs Alembic database migrations
 #   5. Seeds Redis credit cache (credit_service.py CREDIT_SCALE = 100_000)
 #   6. Starts all remaining services
 #   7. Prints registration info for IP phones

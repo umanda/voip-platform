@@ -38,54 +38,55 @@ done
 # FreeSWITCH is on host network — check via fs_cli
 echo ""
 echo "FreeSWITCH (host network):"
+FS_PASS="${FS_ESL_PASSWORD:-ClueCon}"
 if command -v fs_cli &>/dev/null; then
-  fs_status=$(fs_cli -x "status" 2>/dev/null || true)
+  fs_status=$(fs_cli -H 127.0.0.1 -P 8021 -p "${FS_PASS}" -x "status" 2>/dev/null || true)
   if echo "${fs_status}" | grep -q "UP"; then
     uptime=$(echo "${fs_status}" | grep "UP" | head -1)
     ok "FreeSWITCH running — ${uptime}"
     # Check internal profile
-    internal_state=$(fs_cli -x "sofia status profile internal" 2>/dev/null | grep "^State" | awk '{print $2}' || echo "unknown")
+    internal_state=$(fs_cli -H 127.0.0.1 -P 8021 -p "${FS_PASS}" -x "sofia status profile internal" 2>/dev/null | grep "^State" | awk '{print $2}' || echo "unknown")
     if [[ "${internal_state}" == "RUNNING" ]]; then
       ok "Internal SIP profile RUNNING (ext 1001-1005 can register)"
     else
       fail "Internal SIP profile NOT running (state: ${internal_state})"
     fi
     # Check external profile + asterisk-lab gateway
-    gw_state=$(fs_cli -x "sofia status gateway asterisk-lab" 2>/dev/null | grep "^State" | awk '{print $2}' || echo "unknown")
+    gw_state=$(fs_cli -H 127.0.0.1 -P 8021 -p "${FS_PASS}" -x "sofia status gateway asterisk-lab" 2>/dev/null | grep "^State" | awk '{print $2}' || echo "unknown")
     if [[ "${gw_state}" == "REACHABLE" || "${gw_state}" == "UP" ]]; then
       ok "Gateway asterisk-lab REACHABLE"
     else
       warn "Gateway asterisk-lab state: ${gw_state} (Asterisk may be starting)"
     fi
   else
-    fail "FreeSWITCH not responding (try: fs_cli -x 'status')"
+    fail "FreeSWITCH not responding (ESL 127.0.0.1:8021) — check: docker logs voip-lab-freeswitch"
   fi
 else
-  warn "fs_cli not installed — cannot verify FreeSWITCH"
+  warn "fs_cli not installed — cannot verify FreeSWITCH (sudo apt install freeswitch-cli)"
 fi
 
 # ── API health ────────────────────────────────────────────────────────────────
 echo ""
 echo "FastAPI:"
-api_resp=$(curl -sf http://localhost:8000/health 2>/dev/null || echo "FAIL")
+api_resp=$(curl -sf http://localhost:8001/health 2>/dev/null || echo "FAIL")
 if [[ "${api_resp}" != "FAIL" ]]; then
   ok "FastAPI healthy: ${api_resp}"
 else
-  fail "FastAPI not responding — check: make -f lab/Makefile.lab logs-api"
+  fail "FastAPI not responding (port 8001) — check: make -f lab/Makefile.lab logs-api"
 fi
 
 # ── PostgreSQL ────────────────────────────────────────────────────────────────
 echo ""
 echo "PostgreSQL:"
-if docker exec voip-postgres pg_isready -U dev_ifx -d galaxy_2 >/dev/null 2>&1; then
+if docker exec voip-lab-postgres pg_isready -U dev_ifx -d galaxy_2 >/dev/null 2>&1; then
   ok "PostgreSQL accepting connections"
   # Check seed data
-  row_count=$(docker exec voip-postgres psql -U dev_ifx -d galaxy_2 -tAc \
+  row_count=$(docker exec voip-lab-postgres psql -U dev_ifx -d galaxy_2 -tAc \
     "SELECT COUNT(*) FROM credits_customers;" 2>/dev/null || echo "0")
   if [[ "${row_count}" -ge 4 ]]; then
     ok "Seed data present (${row_count} credit_customers rows)"
   else
-    fail "Seed data missing! Run: docker exec voip-postgres psql -U dev_ifx -d galaxy_2 -f /docker-entrypoint-initdb.d/99-seed.sql"
+    fail "Seed data missing! Run: make -f lab/Makefile.lab db-reseed"
   fi
 else
   fail "PostgreSQL not ready"
@@ -94,12 +95,12 @@ fi
 # ── Redis ─────────────────────────────────────────────────────────────────────
 echo ""
 echo "Redis:"
-if docker exec voip-redis redis-cli PING >/dev/null 2>&1; then
+if docker exec voip-lab-redis redis-cli PING >/dev/null 2>&1; then
   ok "Redis responding to PING"
   # Check credit keys
-  c1=$(docker exec voip-redis redis-cli GET "credit:1" 2>/dev/null || echo "")
-  c2=$(docker exec voip-redis redis-cli GET "credit:2" 2>/dev/null || echo "")
-  c3=$(docker exec voip-redis redis-cli GET "credit:3" 2>/dev/null || echo "")
+  c1=$(docker exec voip-lab-redis redis-cli GET "credit:1" 2>/dev/null || echo "")
+  c2=$(docker exec voip-lab-redis redis-cli GET "credit:2" 2>/dev/null || echo "")
+  c3=$(docker exec voip-lab-redis redis-cli GET "credit:3" 2>/dev/null || echo "")
   if [[ -n "${c1}" && -n "${c2}" && "${c3}" == "0" ]]; then
     ok "Redis credit keys seeded (credit:1=${c1}, credit:2=${c2}, credit:3=${c3})"
   else
@@ -112,9 +113,9 @@ fi
 # ── Asterisk ──────────────────────────────────────────────────────────────────
 echo ""
 echo "Asterisk:"
-if docker exec voip-asterisk asterisk -rx "sip show peers" >/dev/null 2>&1; then
+if docker exec voip-lab-asterisk asterisk -rx "sip show peers" >/dev/null 2>&1; then
   ok "Asterisk CLI responding"
-  peer_count=$(docker exec voip-asterisk asterisk -rx "sip show peers" 2>/dev/null | grep -c "^freeswitch" || echo "0")
+  peer_count=$(docker exec voip-lab-asterisk asterisk -rx "sip show peers" 2>/dev/null | grep -c "^freeswitch" || echo "0")
   ok "SIP peers configured: ${peer_count}"
 else
   fail "Asterisk not responding"

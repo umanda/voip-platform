@@ -1,16 +1,22 @@
 # lab/asterisk/Dockerfile
-# Asterisk 20 LTS — lightweight chan_sip for DID simulation only.
-# Uses the official Debian-based image from MiRTA.
+# Asterisk 18 LTS — lightweight chan_sip for DID simulation only.
+# Uses Ubuntu 22.04 (universe repo has asterisk 18.x).
+# Asterisk is NOT available in debian:bookworm apt repos.
 # Only chan_sip and basic PBX modules are needed; no WebRTC, no PJSIP.
 
-FROM debian:bookworm-slim
+FROM ubuntu:22.04
 
-# Install Asterisk 20 from Debian repos (20.x is in bookworm-backports)
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Enable universe repo (contains asterisk 18) then install
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        software-properties-common \
+        gnupg && \
+    add-apt-repository universe && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
         asterisk \
-        asterisk-modules \
-        asterisk-config \
         curl \
         net-tools && \
     rm -rf /var/lib/apt/lists/*
