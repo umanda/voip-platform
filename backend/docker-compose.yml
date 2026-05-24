@@ -1,16 +1,41 @@
+##
+## backend/docker-compose.yml — Backend-only development compose
+##
+## Use this for API / billing worker development without running FreeSWITCH.
+## For the full stack (including FreeSWITCH), use the root docker-compose.yml:
+##   cd .. && make dev
+##
+## Usage (from backend/ directory):
+##   make dev        # starts api + billing_worker + redis
+##   make test       # runs pytest
+##
+## FreeSWITCH ESL is expected at host.docker.internal:8021.
+## If FreeSWITCH is not running, billing_worker will log ESL connection errors
+## and retry — this is expected in API-only dev sessions.
+
 services:
   api:
     build: .
     ports:
       - "8080:8000"
+    # host.docker.internal resolves to the Docker host — allows connecting to
+    # a locally-running FreeSWITCH or the host PostgreSQL instance.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:
       - .env
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     volumes:
       - .:/app
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
   billing_worker:
     build: .
@@ -20,7 +45,8 @@ services:
     env_file:
       - .env
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     volumes:
       - .:/app
 
@@ -29,3 +55,8 @@ services:
     # No host port binding — Redis is internal to the compose network.
     # The host already runs Redis on 127.0.0.1:6379; exposing 6379 would conflict.
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5

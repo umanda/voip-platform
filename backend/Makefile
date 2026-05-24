@@ -1,22 +1,38 @@
-.PHONY: dev down test logs ps install lint
+.PHONY: dev down test logs ps install lint lint-fix
+
+# Backend-only compose (no FreeSWITCH).
+# For the full stack, use the root Makefile: cd .. && make dev
+COMPOSE := docker compose
 
 dev:
-	docker compose up --build -d
+	$(COMPOSE) up --build -d
 
 down:
-	docker compose down
+	$(COMPOSE) down
 
 ps:
-	docker compose ps
+	$(COMPOSE) ps
 
 logs:
-	docker compose logs -f api
+	$(COMPOSE) logs -f api
+
+logs-worker:
+	$(COMPOSE) logs -f billing_worker
 
 test:
-	docker compose run --rm api pytest tests/ -v
+	$(COMPOSE) run --rm api pytest tests/ billing_worker/tests/ -v --tb=short
 
 install:
 	pip install -r requirements.txt
 
 lint:
 	ruff check app/ billing_worker/ tests/
+
+lint-fix:
+	ruff check --fix app/ billing_worker/ tests/
+
+db-migrate:
+	$(COMPOSE) run --rm api alembic upgrade head
+
+shell:
+	$(COMPOSE) exec api bash

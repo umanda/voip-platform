@@ -1,0 +1,27 @@
+##
+## docker-compose.host-net.yml — Host networking override for FreeSWITCH
+##
+## Enables full SIP/RTP media testing with real calls on Linux.
+## On Linux, host networking gives FreeSWITCH direct access to all host ports,
+## including the RTP range (16384-32768) required for call media.
+##
+## Usage (Linux only — not supported on macOS/Windows Docker Desktop):
+##   docker compose -f docker-compose.yml -f docker-compose.host-net.yml up freeswitch
+##
+## IMPORTANT: When using host networking:
+##   - FreeSWITCH ESL is at localhost:8021 on the host
+##   - Billing worker must use FREESWITCH_ESL_HOST=127.0.0.1 (not "freeswitch")
+##   - Set VOIP_API_BASE_URL=http://localhost:8080 (host port for API)
+##
+## R-INFRA-01: Ensure Elastic IP is assigned to the EC2 instance / host.
+## R-INFRA-02: UDP 16384-32768 must be open in the host firewall / AWS Security Group.
+
+name: voip-platform
+
+services:
+  freeswitch:
+    network_mode: host
+    ports: []  # Port mapping has no effect with host networking
+    environment:
+      # Override: API is on host loopback when FS uses host network
+      VOIP_API_BASE_URL: "http://127.0.0.1:8080"

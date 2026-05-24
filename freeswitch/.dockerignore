@@ -1,0 +1,33 @@
+# FreeSWITCH Dockerignore
+# Exclude files that should never be baked into the FS image
+
+# SignalWire token file — build secret, never in image
+.signalwire_token
+
+# Local env files
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
+
+# Docker itself
+Dockerfile
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files — not needed in the container image
+tests/
+
+# Documentation
+*.md

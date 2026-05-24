@@ -1,0 +1,196 @@
+##
+## docker-compose.yml — Full-stack local development environment
+##
+## Services:
+##   api             — FastAPI backend (replaces PHP Sentinel)
+##   billing_worker  — ESL event consumer (replaces checkServiceType.pl)
+##   freeswitch      — SIP engine (Lua dialplan)
+##   redis           — Credit cache + CDR staging store
+##   postgres        — Local PostgreSQL (production uses RDS)
+##
+## Usage:
+##   cp .env.example .env          # fill in secrets
+##   make dev                      # build + start all services
+##   make dev-backend              # start backend services only (no FreeSWITCH)
+##   make logs                     # tail all logs
+##   make test                     # run pytest suite
+##
+## FreeSWITCH networking:
+##   All services share the voip_net bridge network. Lua scripts reach the API
+##   at http://api:8000 (set via VOIP_API_BASE_URL). For real SIP call testing
+##   with RTP media, override FreeSWITCH to use host networking:
+##     docker compose -f docker-compose.yml -f docker-compose.host-net.yml up
+##
+## R-INFRA-02: UDP 16384-32768 (RTP) cannot be fully mapped in bridge mode.
+##             Use host networking for end-to-end call media testing.
+
+name: voip-platform
+
+x-backend-base: &backend-base
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+  networks:
+    - voip_net
+  restart: unless-stopped
+  depends_on:
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+  env_file:
+    - .env
+
+services:
+
+  # ── FastAPI backend ──────────────────────────────────────────────────────────
+  api:
+    <<: *backend-base
+    container_name: voip-api
+    ports:
+      - "${API_HOST_PORT:-8080}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    environment:
+      # Service-discovery overrides for Docker network
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-dev_ifx}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-galaxy_2}"
+      REDIS_URL: "redis://redis:6379/0"
+
+  # ── Billing worker ───────────────────────────────────────────────────────────
+  billing_worker:
+    <<: *backend-base
+    container_name: voip-billing-worker
+    command: ["python", "-m", "billing_worker.worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      freeswitch:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-dev_ifx}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-galaxy_2}"
+      REDIS_URL: "redis://redis:6379/0"
+      # ESL connects to FreeSWITCH service by Docker DNS name
+      FREESWITCH_ESL_HOST: "freeswitch"
+      FREESWITCH_ESL_PORT: "8021"
+      FREESWITCH_ESL_PASSWORD: "${FS_ESL_PASSWORD:-ClueCon}"
+
+  # ── FreeSWITCH SIP engine ────────────────────────────────────────────────────
+  freeswitch:
+    build:
+      context: ./freeswitch
+      dockerfile: Dockerfile
+      # BuildKit secret — token is never baked into any image layer
+      # Create .signalwire_token with your PAT before building
+      secrets:
+        - signalwire_token
+    container_name: voip-freeswitch
+    networks:
+      - voip_net
+    restart: unless-stopped
+    ports:
+      # SIP signalling — must match Voxbone trunk configuration
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "5080:5080/udp"
+      - "5080:5080/tcp"
+      # ESL — billing worker connects here
+      - "8021:8021/tcp"
+      # RTP: exposing full range (16384-32768) not feasible in bridge mode.
+      # For real media: use docker-compose.host-net.yml override.
+    healthcheck:
+      test: ["CMD", "fs_cli", "-x", "status"]
+      interval: 30s
+      timeout: 10s
+      start_period: 45s
+      retries: 3
+    environment:
+      # FastAPI reachable via Docker service name
+      VOIP_API_BASE_URL: "http://api:8000"
+      VOIP_INTERNAL_TOKEN: "${VOIP_INTERNAL_TOKEN:-}"
+      VOXBONE_USERNAME: "${VOXBONE_USERNAME:-}"
+      VOXBONE_PASSWORD: "${VOXBONE_PASSWORD:-}"
+      VOXBONE_REALM: "${VOXBONE_REALM:-sip.voxbone.com}"
+      VOXBONE_PROXY: "${VOXBONE_PROXY:-sip.voxbone.com}"
+      FS_ESL_PASSWORD: "${FS_ESL_PASSWORD:-ClueCon}"
+      VOIP_HTTP_TIMEOUT_MS: "${VOIP_HTTP_TIMEOUT_MS:-2000}"
+      VOIP_TICK_TIMEOUT_MS: "${VOIP_TICK_TIMEOUT_MS:-1500}"
+      VOIP_WARN_REMAINING_SEC: "${VOIP_WARN_REMAINING_SEC:-320}"
+      VOIP_BEEP_REMAINING_SEC: "${VOIP_BEEP_REMAINING_SEC:-10}"
+      VOIP_AUTH_ATTEMPTS: "${VOIP_AUTH_ATTEMPTS:-3}"
+      VOIP_PIN_LENGTH: "${VOIP_PIN_LENGTH:-8}"
+      VOIP_DTMF_TIMEOUT_MS: "${VOIP_DTMF_TIMEOUT_MS:-5000}"
+      VOIP_DEFAULT_GATEWAY: "${VOIP_DEFAULT_GATEWAY:-voxbone-outbound}"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ── Redis — credit cache + CDR staging ──────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: voip-redis
+    networks:
+      - voip_net
+    # maxmemory-policy: allkeys-lru — evict least-recently-used when full.
+    # Credit keys have short TTL; CDR keys are written then consumed quickly.
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # No host port binding by default — Redis is internal.
+    # Uncomment below to access Redis from the host (e.g. redis-cli on laptop):
+    # ports:
+    #   - "6379:6379"
+
+  # ── PostgreSQL — local dev only (production uses RDS) ───────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: voip-postgres
+    networks:
+      - voip_net
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-dev_ifx}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-devpassword}"
+      POSTGRES_DB: "${POSTGRES_DB:-galaxy_2}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dev_ifx} -d ${POSTGRES_DB:-galaxy_2}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # No host port binding by default.
+    # Uncomment to connect with a local DB client:
+    # ports:
+    #   - "5432:5432"
+
+# ── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  voip_net:
+    driver: bridge
+    name: voip_net
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    name: voip_postgres_data
+
+# ── BuildKit secrets ──────────────────────────────────────────────────────────
+secrets:
+  signalwire_token:
+    file: ./freeswitch/.signalwire_token

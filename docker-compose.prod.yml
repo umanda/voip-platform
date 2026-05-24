@@ -1,0 +1,83 @@
+##
+## docker-compose.prod.yml — Production overrides for ECS/EC2 deployment
+##
+## Usage (never run directly — apply via deploy pipeline):
+##   docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+##
+## Key differences from local dev:
+##   - No volume mounts (immutable containers)
+##   - No postgres service (uses RDS)
+##   - Secrets via AWS Secrets Manager (injected as env vars by ECS agent)
+##   - Specific Uvicorn worker count for Fargate vCPU allocation
+##   - No host port bindings (ECS tasks sit behind ALB)
+##   - DEBUG disabled, docs endpoint disabled
+##
+## FreeSWITCH:
+##   In production, FreeSWITCH runs directly on EC2 (not in ECS Fargate).
+##   It is NOT in this compose file. The freeswitch service is excluded here.
+##   See docs/guides/lab-setup-guide.md for EC2 FreeSWITCH install.
+##
+## Deployment:
+##   The CI/CD pipeline (GitHub Actions) renders the final task definition
+##   using: docker compose -f docker-compose.yml -f docker-compose.prod.yml convert
+##   Output is passed to aws ecs register-task-definition.
+
+name: voip-platform
+
+services:
+
+  # ── FastAPI API — Fargate task ───────────────────────────────────────────────
+  api:
+    # Production: pull from ECR, never build locally
+    image: "${ECR_REGISTRY}/${ECR_API_REPO}:${IMAGE_TAG:-latest}"
+    build: !reset null  # Disable local build in prod
+    volumes: []          # No volume mounts — immutable container
+    ports: []            # No direct port binding — sits behind ALB
+    # Reset depends_on: redis/postgres/freeswitch don't exist as services in prod
+    depends_on: !reset {}
+    environment:
+      # Override: connect to RDS, not local postgres container
+      DATABASE_URL: "${DATABASE_URL}"
+      REDIS_URL: "${REDIS_URL}"
+      INTERNAL_JWT_SECRET: "${INTERNAL_JWT_SECRET}"
+      DEBUG: "false"
+      # Fargate 1 vCPU → 2 workers is appropriate
+      # Scale workers via ECS desired count, not per-task workers
+    command:
+      - "uvicorn"
+      - "app.main:app"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+      - "--workers"
+      - "${UVICORN_WORKERS:-2}"
+      - "--proxy-headers"           # Trust X-Forwarded-* from ALB
+      - "--forwarded-allow-ips=*"   # ALB injects real client IP
+
+  # ── Billing Worker — Fargate task ────────────────────────────────────────────
+  billing_worker:
+    image: "${ECR_REGISTRY}/${ECR_API_REPO}:${IMAGE_TAG:-latest}"
+    build: !reset null
+    volumes: []
+    depends_on: !reset {}
+    environment:
+      DATABASE_URL: "${DATABASE_URL}"
+      REDIS_URL: "${REDIS_URL}"
+      # ESL connects to FreeSWITCH EC2 via private IP / Route53 internal DNS
+      FREESWITCH_ESL_HOST: "${FREESWITCH_PRIVATE_IP}"
+      FREESWITCH_ESL_PORT: "8021"
+      FREESWITCH_ESL_PASSWORD: "${FS_ESL_PASSWORD}"
+
+  # ── Exclude postgres in production (uses RDS) ────────────────────────────────
+  postgres:
+    profiles: ["local-only"]  # Never starts in prod (profile not activated)
+
+  # ── Exclude FreeSWITCH from compose in prod (runs on EC2) ───────────────────
+  freeswitch:
+    profiles: ["local-only"]
+
+  # ── Redis — ElastiCache in production ────────────────────────────────────────
+  # Remove the redis container service; API/worker connect to ElastiCache URL
+  redis:
+    profiles: ["local-only"]
