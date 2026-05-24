@@ -8,7 +8,7 @@
   Differences from production template (freeswitch/conf/vars.xml.tpl):
   - PCMA (alaw) first in codec prefs (Fanvil phones require this)
   - voip_default_gateway = asterisk-lab (set via VOIP_DEFAULT_GATEWAY env)
-  - lab_asterisk_ip hardcoded (172.20.0.50 — fixed in docker-compose.lab.yml)
+  - lab_asterisk_ip hardcoded (172.28.0.50 — fixed in docker-compose.lab.yml)
   - Voxbone vars not used; kept to avoid entrypoint warnings
 
   Variables substituted by entrypoint (see docker-entrypoint.sh envsubst list):
@@ -65,7 +65,7 @@
 
   <!-- LAB: Asterisk carrier IP (hardcoded — Docker bridge fixed IP) -->
   <!-- Used in freeswitch-lab/conf/sip_profiles/external.xml gateway config -->
-  <X-PRE-PROCESS cmd="set" data="lab_asterisk_ip=172.20.0.50"/>
+  <X-PRE-PROCESS cmd="set" data="lab_asterisk_ip=172.28.0.50"/>
   <X-PRE-PROCESS cmd="set" data="lab_asterisk_port=5060"/>
 
 </include>

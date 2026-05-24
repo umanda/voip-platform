@@ -144,9 +144,10 @@ CREATE TABLE IF NOT EXISTS ivr_known_users (
 CREATE INDEX IF NOT EXISTS idx_ivr_known_users_caller_id ON ivr_known_users(caller_id);
 
 CREATE TABLE IF NOT EXISTS consultant_ivr_numbers (
-    id            SERIAL PRIMARY KEY,
-    consultant_id INTEGER NOT NULL REFERENCES consultants(id),
-    number        VARCHAR NOT NULL UNIQUE
+    id                  SERIAL PRIMARY KEY,
+    consultant_id       INTEGER NOT NULL REFERENCES consultants(id),
+    site_ivr_number_id  INTEGER NOT NULL REFERENCES site_ivr_numbers(id),
+    group_id            INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS consultant_statistics (

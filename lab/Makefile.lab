@@ -8,7 +8,7 @@ DC = docker compose -f lab/docker-compose.lab.yml
 LAB_DIR = lab
 
 # Lab port assignments (avoid conflicts with other dev containers)
-LAB_PG_PORT  = 5433
+LAB_PG_PORT  = 5434
 LAB_API_PORT = 8001
 LAB_REDIS_CTR = voip-lab-redis
 LAB_PG_CTR    = voip-lab-postgres

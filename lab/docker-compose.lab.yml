@@ -31,7 +31,7 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/24
+        - subnet: 172.28.0.0/24
 
 services:
 
@@ -45,7 +45,7 @@ services:
     container_name: voip-lab-asterisk
     networks:
       voip-lab:
-        ipv4_address: 172.20.0.50
+        ipv4_address: 172.28.0.50
     ports:
       - "5080:5060/udp"   # SIP UDP — host:5080 maps to Asterisk container:5060
       - "5080:5060/tcp"   # SIP TCP
@@ -73,9 +73,11 @@ services:
   # ─────────────────────────────────────────────────────────────────
   freeswitch:
     build:
-      context: ../freeswitch
-      dockerfile: Dockerfile
-      # NO secrets: section — uses Debian apt packages (Option B), no SignalWire token needed
+      context: ..    # repo root — required so Dockerfile can COPY freeswitch/docker-entrypoint.sh
+      dockerfile: lab/freeswitch-lab/Dockerfile
+      # SignalWire token is injected as a build secret — never stored in image layers
+      secrets:
+        - signalwire_token
     container_name: voip-lab-freeswitch
     network_mode: host
     environment:
@@ -90,8 +92,8 @@ services:
       # Leave Voxbone vars blank — not needed in lab
       - VOXBONE_USERNAME=lab
       - VOXBONE_PASSWORD=lab
-      - VOXBONE_REALM=172.20.0.50
-      - VOXBONE_PROXY=172.20.0.50
+      - VOXBONE_REALM=172.28.0.50
+      - VOXBONE_PROXY=172.28.0.50
       - RTP_START_PORT=16384
       - RTP_END_PORT=32768
     volumes:
@@ -120,12 +122,12 @@ services:
     container_name: voip-lab-api
     networks:
       voip-lab:
-        ipv4_address: 172.20.0.20
+        ipv4_address: 172.28.0.20
     ports:
       - "8001:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://dev_ifx:labpass@172.20.0.30:5432/galaxy_2
-      - REDIS_URL=redis://172.20.0.40:6379
+      - DATABASE_URL=postgresql+asyncpg://dev_ifx:labpass@172.28.0.30:5432/galaxy_2
+      - REDIS_URL=redis://172.28.0.40:6379
       - INTERNAL_JWT_SECRET=${INTERNAL_JWT_SECRET}
       - ENVIRONMENT=lab
       - LOG_LEVEL=DEBUG
@@ -155,12 +157,12 @@ services:
     container_name: voip-lab-billing-worker
     networks:
       voip-lab:
-        ipv4_address: 172.20.0.25
+        ipv4_address: 172.28.0.25
     extra_hosts:
       - "host.docker.internal:host-gateway"   # FreeSWITCH ESL reachable at host IP
     environment:
-      - DATABASE_URL=postgresql+asyncpg://dev_ifx:labpass@172.20.0.30:5432/galaxy_2
-      - REDIS_URL=redis://172.20.0.40:6379
+      - DATABASE_URL=postgresql+asyncpg://dev_ifx:labpass@172.28.0.30:5432/galaxy_2
+      - REDIS_URL=redis://172.28.0.40:6379
       - FREESWITCH_ESL_HOST=host.docker.internal   # FS on host network
       - FREESWITCH_ESL_PORT=8021
       - FREESWITCH_ESL_PASSWORD=${FS_ESL_PASSWORD:-ClueCon}
@@ -180,9 +182,9 @@ services:
     container_name: voip-lab-postgres
     networks:
       voip-lab:
-        ipv4_address: 172.20.0.30
+        ipv4_address: 172.28.0.30
     ports:
-      - "5433:5432"
+      - "5434:5432"
     environment:
       - POSTGRES_DB=galaxy_2
       - POSTGRES_USER=dev_ifx
@@ -206,7 +208,7 @@ services:
     container_name: voip-lab-redis
     networks:
       voip-lab:
-        ipv4_address: 172.20.0.40
+        ipv4_address: 172.28.0.40
     ports:
       - "6380:6379"
     command: redis-server --appendonly yes --loglevel verbose
@@ -222,7 +224,7 @@ services:
     container_name: voip-lab-sipp
     networks:
       voip-lab:
-        ipv4_address: 172.20.0.60
+        ipv4_address: 172.28.0.60
     volumes:
       - ./sipp/scenarios:/scenarios
     profiles: ["loadtest"]
@@ -237,7 +239,7 @@ services:
     container_name: voip-lab-prometheus
     networks:
       voip-lab:
-        ipv4_address: 172.20.0.71
+        ipv4_address: 172.28.0.71
     ports:
       - "9090:9090"
     volumes:
@@ -252,7 +254,7 @@ services:
     container_name: voip-lab-grafana
     networks:
       voip-lab:
-        ipv4_address: 172.20.0.70
+        ipv4_address: 172.28.0.70
     ports:
       - "3000:3000"
     environment:
@@ -268,3 +270,7 @@ volumes:
   redis-lab-data:
   freeswitch-logs:
   grafana-lab-data:
+
+secrets:
+  signalwire_token:
+    environment: SIGNALWIRE_TOKEN
