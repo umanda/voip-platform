@@ -1,0 +1,69 @@
+<!--
+  lab/freeswitch-lab/conf/dialplan/default.xml
+  FreeSWITCH default context — handles inbound DID calls.
+
+  Receives calls from:
+  1. Asterisk fake carrier (via external profile port 5080)
+  2. FreeSWITCH internal profile (when phone dials a test DID — via transfer)
+
+  Flow:
+    1. lua dialplan/auth.lua  — answers call, prompts for 8-digit PIN (credit_code),
+                                 calls FastAPI POST /v1/call/authorize
+                                 sets channel vars: voip_gateway, voip_destination_number
+    2. bridge                 — connects to consultant via asterisk-lab gateway
+                                 (Asterisk routes to FS internal → ext 1002)
+    3. lua billing/hangup.lua — logs hangup cause
+    4. hangup
+
+  Lab DIDs that hit this context:
+    +18001000001, +18001000002, +18001000003, +18001000004
+  The number is stored WITHOUT '+' in site_ivr_numbers.number.
+  auth.lua normalizes the destination_number accordingly.
+
+  Hot reload: fs_cli -x "reloadxml"
+-->
+<include>
+  <context name="default">
+
+    <!-- ── Inbound DID from Asterisk / internal transfer ─────────── -->
+    <!-- Match E.164 DIDs with or without leading + -->
+    <extension name="voip_inbound_did" continue="false">
+      <condition field="destination_number" expression="^(\+?1?8001\d{6})$">
+
+        <!-- Preserve all SIP headers through bridge (R-SIP-02) -->
+        <action application="set"  data="sip_copy_custom_headers=true"/>
+        <!-- Allow call to continue after bridge (for hangup.lua) -->
+        <action application="set"  data="hangup_after_bridge=false"/>
+        <action application="set"  data="continue_on_fail=true"/>
+
+        <!-- Step 1: Authorize — collects 8-digit PIN, calls FastAPI /authorize -->
+        <!-- Sets voip_gateway and voip_destination_number on success -->
+        <!-- Hangs up the call internally if credit check fails -->
+        <action application="lua"  data="dialplan/auth.lua"/>
+
+        <!-- Step 2: Bridge to consultant only if auth succeeded -->
+        <!-- If auth.lua hung up the call, voip_gateway will be empty -->
+        <!-- and this condition evaluates false — skips bridge cleanly -->
+        <action application="bridge"
+                data="sofia/gateway/${voip_gateway}/${voip_destination_number}"
+                inline="false"/>
+
+        <!-- Step 3: Post-call logging (billing worker picks up via ESL) -->
+        <action application="lua"  data="billing/hangup.lua"/>
+
+        <!-- Final hangup -->
+        <action application="hangup" data="NORMAL_CLEARING"/>
+
+      </condition>
+    </extension>
+
+    <!-- ── Catch-all: reject non-DID calls with 404 ──────────────── -->
+    <extension name="voip_invalid">
+      <condition>
+        <action application="respond" data="404 Not Found"/>
+        <action application="hangup"  data="NO_ROUTE_DESTINATION"/>
+      </condition>
+    </extension>
+
+  </context>
+</include>

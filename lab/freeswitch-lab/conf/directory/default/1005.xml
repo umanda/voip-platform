@@ -1,0 +1,26 @@
+<!--
+  lab/freeswitch-lab/conf/directory/default/1005.xml
+  Softphone 3 — MicroSIP or Linphone mobile
+
+  SIP credentials: username=1005, password=1005
+  Domain: <host-machine-IP>:5060
+  Transport: UDP
+-->
+<include>
+  <user id="1005">
+    <params>
+      <param name="password"       value="1005"/>
+      <param name="vm-password"    value="1005"/>
+    </params>
+    <variables>
+      <variable name="toll_allow"          value="domestic,international,local"/>
+      <variable name="accountcode"         value="1005"/>
+      <variable name="user_context"        value="internal"/>
+      <variable name="effective_caller_id_name"   value="MicroSIP / Linphone Mobile"/>
+      <variable name="effective_caller_id_number" value="1005"/>
+      <variable name="outbound_caller_id_name"    value="Softphone 3"/>
+      <variable name="outbound_caller_id_number"  value="1005"/>
+      <variable name="codec_string"        value="PCMA,PCMU"/>
+    </variables>
+  </user>
+</include>

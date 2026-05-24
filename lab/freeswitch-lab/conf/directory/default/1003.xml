@@ -1,0 +1,27 @@
+<!--
+  lab/freeswitch-lab/conf/directory/default/1003.xml
+  Softphone 1 — Linphone (laptop)
+
+  SIP credentials: username=1003, password=1003
+  SIP Address: sip:1003@<host-machine-IP>
+  Transport: UDP (Linphone default)
+  Codec: PCMA, PCMU
+-->
+<include>
+  <user id="1003">
+    <params>
+      <param name="password"       value="1003"/>
+      <param name="vm-password"    value="1003"/>
+    </params>
+    <variables>
+      <variable name="toll_allow"          value="domestic,international,local"/>
+      <variable name="accountcode"         value="1003"/>
+      <variable name="user_context"        value="internal"/>
+      <variable name="effective_caller_id_name"   value="Linphone Laptop"/>
+      <variable name="effective_caller_id_number" value="1003"/>
+      <variable name="outbound_caller_id_name"    value="Linphone"/>
+      <variable name="outbound_caller_id_number"  value="1003"/>
+      <variable name="codec_string"        value="PCMA,PCMU"/>
+    </variables>
+  </user>
+</include>

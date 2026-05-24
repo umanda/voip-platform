@@ -1,0 +1,29 @@
+<!--
+  lab/freeswitch-lab/conf/directory/default/1002.xml
+  IP Phone 2 — Fanvil (physical hardware, LAN)
+  This phone acts as the "consultant" in test scenarios — it receives the call.
+
+  SIP credentials: username=1002, password=1002
+  Register to: <host-machine-IP>:5060
+  Codec: PCMA first, then PCMU
+  Register expiry: 60s
+-->
+<include>
+  <user id="1002">
+    <params>
+      <param name="password"       value="1002"/>
+      <param name="vm-password"    value="1002"/>
+    </params>
+    <variables>
+      <variable name="toll_allow"          value="domestic,international,local"/>
+      <variable name="accountcode"         value="1002"/>
+      <variable name="user_context"        value="internal"/>
+      <variable name="effective_caller_id_name"   value="IP Phone 2 (Consultant)"/>
+      <variable name="effective_caller_id_number" value="1002"/>
+      <variable name="outbound_caller_id_name"    value="IP Phone 2"/>
+      <variable name="outbound_caller_id_number"  value="1002"/>
+      <!-- Fanvil: prefer alaw -->
+      <variable name="codec_string"        value="PCMA,PCMU"/>
+    </variables>
+  </user>
+</include>

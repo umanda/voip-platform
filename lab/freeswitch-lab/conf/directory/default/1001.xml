@@ -1,0 +1,28 @@
+<!--
+  lab/freeswitch-lab/conf/directory/default/1001.xml
+  IP Phone 1 — Fanvil (physical hardware, LAN)
+
+  SIP credentials: username=1001, password=1001
+  Register to: <host-machine-IP>:5060
+  Codec: PCMA first, then PCMU
+  Register expiry: 60s (matches internal SIP profile min/max)
+-->
+<include>
+  <user id="1001">
+    <params>
+      <param name="password"       value="1001"/>
+      <param name="vm-password"    value="1001"/>
+    </params>
+    <variables>
+      <variable name="toll_allow"          value="domestic,international,local"/>
+      <variable name="accountcode"         value="1001"/>
+      <variable name="user_context"        value="internal"/>
+      <variable name="effective_caller_id_name"   value="IP Phone 1"/>
+      <variable name="effective_caller_id_number" value="1001"/>
+      <variable name="outbound_caller_id_name"    value="IP Phone 1"/>
+      <variable name="outbound_caller_id_number"  value="1001"/>
+      <!-- Fanvil: prefer alaw, no video -->
+      <variable name="codec_string"        value="PCMA,PCMU"/>
+    </variables>
+  </user>
+</include>

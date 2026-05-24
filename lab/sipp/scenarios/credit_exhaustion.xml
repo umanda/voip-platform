@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  lab/sipp/scenarios/credit_exhaustion.xml
+  SIPp scenario: test billing ticks and graceful credit exhaustion.
+
+  PURPOSE: Verify the full billing pipeline:
+    1. Pre-call credit gate (R-BILL-03) — passes (Beta has 1.20 EUR)
+    2. Billing ticks fire during the call
+    3. Call terminates gracefully when credit runs out (R-FLOW-02)
+    4. CDR is written with correct cost and ANSWERED disposition
+
+  Uses DID +18001000002 (Beta account — 1.20 EUR credit).
+  At EUR 0.02/min consultant rate, the call lasts approximately 2 minutes
+  before credit exhaustion triggers FreeSWITCH hangup.
+
+  Expected outcome:
+    - SIPp sends INVITE and gets 200 OK (call connects)
+    - After ~120 seconds, FreeSWITCH sends BYE (credit exhausted)
+    - CDR: disposition=ANSWERED, cost_cents=~120 (≈1.20 EUR)
+    - Redis credit:2 = 0
+
+  Verification:
+    make -f lab/Makefile.lab watch-credit    (watch credit:2 drop to 0)
+    make -f lab/Makefile.lab watch-cdrs      (CDR appears after hangup)
+
+  Usage:
+    make -f lab/Makefile.lab sipp-credit-exhaustion
+-->
+<scenario name="credit_exhaustion">
+
+  <!-- ── INVITE to Beta DID ────────────────────────────────────── -->
+  <send retrans="500">
+    <![CDATA[
+      INVITE sip:+18001000002@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: "Credit Test" <sip:+15005550099@[local_ip]:[local_port]>;tag=[call_number]
+      To: <sip:+18001000002@[remote_ip]:[remote_port]>
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: sip:+15005550099@[local_ip]:[local_port]
+      Max-Forwards: 70
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=sipp 53655765 2353687637 IN IP4 [local_ip]
+      s=-
+      c=IN IP4 [local_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 8 0 101
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+    ]]>
+  </send>
+
+  <recv response="100" optional="true" />
+  <recv response="180" optional="true" />
+
+  <!-- ── 200 OK — call connected ───────────────────────────────── -->
+  <recv response="200" rtd="true">
+    <action>
+      <ereg regexp="Contact: .*sip:([^;>]+)" search_in="msg" check_it="true" assign_to="contact_uri"/>
+    </action>
+  </recv>
+
+  <send>
+    <![CDATA[
+      ACK [contact_uri] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: "Credit Test" <sip:+15005550099@[local_ip]:[local_port]>;tag=[call_number]
+      To: <sip:+18001000002@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Max-Forwards: 70
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <!-- ── Wait for FreeSWITCH to terminate (credit exhaustion) ──── -->
+  <!-- FS sends BYE when credit runs out (~120s for Beta account)   -->
+  <!-- Timeout: 300s (5 minutes) — more than enough for exhaustion  -->
+  <recv request="BYE" timeout="300000">
+    <action>
+      <ereg regexp="Contact: .*sip:([^;>]+)" search_in="msg" check_it="false" assign_to="bye_uri"/>
+    </action>
+  </recv>
+
+  <!-- ── 200 OK to BYE ─────────────────────────────────────────── -->
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <ResponseTimeRepartition value="100, 200, 500, 1000, 2000, 5000"/>
+  <CallLengthRepartition value="60, 90, 120, 150, 180, 240"/>
+
+</scenario>

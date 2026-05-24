@@ -1,0 +1,78 @@
+<!--
+  lab/freeswitch-lab/conf/dialplan/internal.xml
+  FreeSWITCH internal context — handles calls from registered phones/softphones.
+
+  Extensions registered on the internal SIP profile (port 5060):
+    1001  IP Phone 1 (Fanvil)
+    1002  IP Phone 2 (Fanvil)
+    1003  Softphone 1 (Linphone)
+    1004  Softphone 2 (Zoiper)
+    1005  Softphone 3 (MicroSIP / Linphone mobile)
+
+  Special routes:
+  - Ext 1XXX → extension-to-extension call
+  - +1800XXXXXXX → test DID simulation: transfer to default context
+    (simulates a phone placing an inbound PSTN call to a Voxbone DID)
+  - 9+10 digits → route via Asterisk as PSTN outbound (SIPp tests)
+
+  Hot reload: fs_cli -x "reloadxml"
+-->
+<include>
+  <context name="internal">
+
+    <!-- ── Ext-to-ext: 4-digit extensions ───────────────────────── -->
+    <!-- Direct call between lab phones without going through auth -->
+    <extension name="lab_internal_ext">
+      <condition field="destination_number" expression="^(1[0-9]{3})$">
+        <action application="set"  data="hangup_after_bridge=true"/>
+        <action application="bridge" data="user/$1@default"/>
+      </condition>
+    </extension>
+
+    <!-- ── Test DID simulation: phone dials +1800XXXXXXX ─────────── -->
+    <!-- Transfers the call to the default context which runs auth.lua -->
+    <!-- This lets Fanvil Phone 1 simulate a PSTN caller dialing a DID -->
+    <!-- without needing Asterisk in the path for basic testing.        -->
+    <extension name="lab_did_test">
+      <condition field="destination_number" expression="^(\+?18001\d{6})$">
+        <action application="transfer" data="$1 XML default"/>
+      </condition>
+    </extension>
+
+    <!-- ── Lab shorthand: 9+DID → full E.164 ────────────────────── -->
+    <!-- Dial 918001000001 → routes to default context as +18001000001 -->
+    <extension name="lab_did_prefix">
+      <condition field="destination_number" expression="^9(18001\d{6})$">
+        <action application="transfer" data="+$1 XML default"/>
+      </condition>
+    </extension>
+
+    <!-- ── Outbound via Asterisk: 9+international prefix ─────────── -->
+    <!-- For testing PSTN outbound routing through the Asterisk gateway -->
+    <extension name="lab_pstn_outbound">
+      <condition field="destination_number" expression="^9(\+?[0-9]{7,15})$">
+        <action application="set"  data="hangup_after_bridge=true"/>
+        <action application="bridge" data="sofia/gateway/asterisk-lab/$1"/>
+      </condition>
+    </extension>
+
+    <!-- ── Voicemail: *XX extensions (optional stub) ─────────────── -->
+    <extension name="voicemail_stub">
+      <condition field="destination_number" expression="^\*([0-9]+)$">
+        <action application="answer"/>
+        <action application="sleep"   data="500"/>
+        <action application="playback" data="tone_stream://%(400,0,350,440)"/>
+        <action application="hangup"  data="NORMAL_CLEARING"/>
+      </condition>
+    </extension>
+
+    <!-- ── Catch-all: reject unknown destinations ─────────────────── -->
+    <extension name="internal_invalid">
+      <condition>
+        <action application="respond" data="404 Not Found"/>
+        <action application="hangup"  data="NO_ROUTE_DESTINATION"/>
+      </condition>
+    </extension>
+
+  </context>
+</include>

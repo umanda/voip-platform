@@ -1,0 +1,95 @@
+<!--
+  lab/freeswitch-lab/conf/sip_profiles/external.xml
+  FreeSWITCH external SIP profile — handles the Asterisk carrier trunk.
+
+  LAB roles:
+  1. Receives inbound DID calls from Asterisk (fake Voxbone carrier)
+     Asterisk sends to host:5080 → this profile → context=default → auth.lua
+  2. Routes outbound consultant calls via the asterisk-lab gateway
+     FreeSWITCH bridges to: sofia/gateway/asterisk-lab/1002
+     → Asterisk routes to FS internal → rings ext 1002
+
+  Gateway: asterisk-lab
+  - host: 172.20.0.50 (Asterisk Docker container fixed IP)
+  - port: 5060 (inside Docker, mapped from host:5080)
+  - No registration needed — insecure=port,invite
+
+  Hot reload (profile only, no restart needed):
+    fs_cli -x "sofia profile external restart"
+-->
+<profile name="external">
+
+  <gateways>
+    <!--
+      asterisk-lab — outbound gateway for consultant calls.
+      
+      Name matches:
+        - voip_default_gateway in vars.xml
+        - provider_sequence in consultants seed data
+        - FS bridge: sofia/gateway/asterisk-lab/<number>
+      
+      Asterisk receives the call and routes to FreeSWITCH internal
+      to ring the consultant extension.
+    -->
+    <gateway name="asterisk-lab">
+      <param name="username"              value="lab"/>
+      <param name="password"              value="lab"/>
+      <!-- Asterisk container fixed IP on voip-lab Docker network -->
+      <param name="realm"                 value="$${lab_asterisk_ip}"/>
+      <param name="proxy"                 value="$${lab_asterisk_ip}"/>
+      <param name="register"              value="false"/>   <!-- No registration needed -->
+      <param name="register-transport"    value="udp"/>
+      <!-- Preserve caller ID through outbound leg (R-SIP-02) -->
+      <param name="caller-id-in-from"     value="true"/>
+      <param name="timeout-seconds"       value="30"/>
+      <!-- Retry quickly in lab -->
+      <param name="retry-seconds"         value="10"/>
+    </gateway>
+  </gateways>
+
+  <settings>
+    <!-- FreeSWITCH is on host network — bind to all interfaces -->
+    <param name="sip-ip"             value="0.0.0.0"/>
+    <param name="sip-port"           value="5080"/>
+    <param name="rtp-ip"             value="0.0.0.0"/>
+
+    <!-- UDP only for carrier trunk (simpler, Asterisk uses UDP) -->
+    <param name="sip-transport"      value="udp"/>
+    <param name="tls-enable"         value="false"/>
+
+    <!-- Codec order — PCMA first (Fanvil/Asterisk preference) -->
+    <param name="codec-prefs"        value="$${outbound_codec_prefs}"/>
+    <param name="codec-negotiation"  value="generous"/>
+
+    <!-- DTMF: RFC 2833 -->
+    <param name="dtmf-type"          value="rfc2833"/>
+    <param name="liberal-dtmf"       value="true"/>
+
+    <!-- RTP ports -->
+    <param name="rtp-start-port"     value="$${rtp_start_port}"/>
+    <param name="rtp-end-port"       value="$${rtp_end_port}"/>
+    <param name="disable-rtp-auto-adjust" value="false"/>
+
+    <!-- Inbound DID calls from Asterisk land in the default context -->
+    <param name="context"            value="default"/>
+
+    <param name="inbound-codec-prefs"  value="$${global_codec_prefs}"/>
+    <param name="outbound-codec-prefs" value="$${outbound_codec_prefs}"/>
+    <param name="inbound-codec-negotiation" value="generous"/>
+
+    <!-- Allow insecure inbound from Asterisk (no REGISTER required) -->
+    <param name="accept-blind-reg"   value="false"/>
+    <param name="auth-calls"         value="false"/>  <!-- Asterisk trunk is trusted -->
+
+    <!-- Do not disable re-INVITE (hold/resume — R-SIP-04) -->
+    <param name="disable-transfer"   value="false"/>
+
+    <!-- Preserve SIP headers through bridge (R-SIP-02) -->
+    <param name="pass-callee-id"     value="true"/>
+
+    <param name="debug"              value="0"/>
+    <param name="log-auth-failures"  value="true"/>
+
+  </settings>
+
+</profile>

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  lab/sipp/scenarios/concurrent_calls.xml
+  SIPp scenario: 10 concurrent calls — credit deduction stress test.
+
+  PURPOSE: Verify that Redis atomic credit deduction (R-BILL-01) prevents
+  negative balances under concurrent load. Alpha account has 1000 EUR,
+  so 10 concurrent calls at EUR 0.02/min won't exhaust credit.
+
+  What to watch while running:
+    Terminal 1: make -f lab/Makefile.lab watch-credit    (should never go negative)
+    Terminal 2: make -f lab/Makefile.lab calls           (10 active calls shown)
+    Terminal 3: make -f lab/Makefile.lab logs-billing    (billing ticks appear)
+
+  All calls use DID +18001000001 (Alpha — 1000 EUR credit).
+  If credit goes negative, the atomic Lua script in credit_service.py is broken.
+
+  Usage:
+    make -f lab/Makefile.lab sipp-concurrent
+    (runs with -l 10 -m 10 -r 2 from Makefile.lab)
+-->
+<scenario name="concurrent_calls">
+
+  <!-- ── INVITE ────────────────────────────────────────────────── -->
+  <send retrans="500">
+    <![CDATA[
+      INVITE sip:+18001000001@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: "Load Test [call_number]" <sip:+1555[call_number]@[local_ip]:[local_port]>;tag=[call_number]
+      To: <sip:+18001000001@[remote_ip]:[remote_port]>
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: sip:+1555[call_number]@[local_ip]:[local_port]
+      Max-Forwards: 70
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=sipp 53655765 2353687637 IN IP4 [local_ip]
+      s=-
+      c=IN IP4 [local_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 8 0 101
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+    ]]>
+  </send>
+
+  <recv response="100" optional="true" />
+  <recv response="180" optional="true" />
+  <recv response="200" rtd="true">
+    <action>
+      <ereg regexp="Contact: .*sip:([^;>]+)" search_in="msg" check_it="true" assign_to="contact_uri"/>
+    </action>
+  </recv>
+
+  <send>
+    <![CDATA[
+      ACK [contact_uri] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: "Load Test [call_number]" <sip:+1555[call_number]@[local_ip]:[local_port]>;tag=[call_number]
+      To: <sip:+18001000001@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Max-Forwards: 70
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <!-- ── Hold call for 90 seconds (spans at least one billing tick) ── -->
+  <nop>
+    <action>
+      <exec command="sleep 90"/>
+    </action>
+  </nop>
+
+  <send retrans="500">
+    <![CDATA[
+      BYE [contact_uri] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: "Load Test [call_number]" <sip:+1555[call_number]@[local_ip]:[local_port]>;tag=[call_number]
+      To: <sip:+18001000001@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 2 BYE
+      Max-Forwards: 70
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <recv response="200" />
+
+  <ResponseTimeRepartition value="100, 200, 300, 500, 1000, 2000, 4000"/>
+  <CallLengthRepartition value="30, 60, 90, 120, 180"/>
+
+</scenario>

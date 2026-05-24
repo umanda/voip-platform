@@ -1,0 +1,26 @@
+<!--
+  lab/freeswitch-lab/conf/directory/default/1004.xml
+  Softphone 2 — Zoiper
+
+  SIP credentials: username=1004, password=1004
+  Domain: <host-machine-IP>:5060
+  Transport: UDP
+-->
+<include>
+  <user id="1004">
+    <params>
+      <param name="password"       value="1004"/>
+      <param name="vm-password"    value="1004"/>
+    </params>
+    <variables>
+      <variable name="toll_allow"          value="domestic,international,local"/>
+      <variable name="accountcode"         value="1004"/>
+      <variable name="user_context"        value="internal"/>
+      <variable name="effective_caller_id_name"   value="Zoiper"/>
+      <variable name="effective_caller_id_number" value="1004"/>
+      <variable name="outbound_caller_id_name"    value="Zoiper"/>
+      <variable name="outbound_caller_id_number"  value="1004"/>
+      <variable name="codec_string"        value="PCMA,PCMU"/>
+    </variables>
+  </user>
+</include>

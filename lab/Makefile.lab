@@ -1,0 +1,203 @@
+# lab/Makefile.lab — Local VoIP Lab commands
+# Run from the repo root: make -f lab/Makefile.lab <target>
+# Or from lab/ directory: make -f Makefile.lab <target>
+#
+# Prerequisites: Docker Engine 24+, docker compose v2, fs_cli (installed on host)
+
+DC = docker compose -f lab/docker-compose.lab.yml
+LAB_DIR = lab
+
+.PHONY: lab lab-monitor lab-load reset stop \
+        fs-cli calls reload-lua \
+        sipp-basic sipp-concurrent sipp-credit-exhaustion \
+        sngrep watch-credit watch-cdrs \
+        logs-fs logs-api logs-billing logs-asterisk logs-worker \
+        db-shell redis-cli verify
+
+# ─────────────────────────────────────────
+# LIFECYCLE
+# ─────────────────────────────────────────
+
+## Start core lab (API, billing worker, postgres, redis, asterisk, freeswitch)
+lab:
+	$(DC) up -d
+	@echo ""
+	@echo "Lab is running. Check status:"
+	@echo "  make -f lab/Makefile.lab verify"
+	@echo "  make -f lab/Makefile.lab fs-cli"
+
+## Start lab + Grafana + Prometheus monitoring
+lab-monitor:
+	$(DC) --profile monitoring up -d
+	@echo "Grafana: http://localhost:3000  (admin/admin)"
+	@echo "Prometheus: http://localhost:9090"
+
+## Start lab + loadtest profile (SIPp available)
+lab-load:
+	$(DC) --profile loadtest up -d
+
+## Stop all lab containers (preserves volumes)
+stop:
+	$(DC) down
+
+## ⚠ Wipe all data and restart from scratch
+reset:
+	$(DC) down -v
+	bash $(LAB_DIR)/scripts/reset-lab.sh
+
+# ─────────────────────────────────────────
+# FREESWITCH
+# ─────────────────────────────────────────
+
+## Open FreeSWITCH console (fs_cli must be installed on host)
+fs-cli:
+	fs_cli
+
+## Show active calls in FreeSWITCH
+calls:
+	fs_cli -x "show calls"
+
+## Show registered SIP extensions
+sofia-status:
+	fs_cli -x "sofia status"
+	fs_cli -x "sofia status profile internal"
+
+## Reload Lua scripts without restarting FreeSWITCH
+reload-lua:
+	fs_cli -x "reload mod_lua"
+	@echo "✓ Lua scripts reloaded"
+
+## Reload all dialplan XML
+reload-xml:
+	fs_cli -x "reloadxml"
+	@echo "✓ XML reloaded"
+
+# ─────────────────────────────────────────
+# SIPP LOAD TESTS
+# ─────────────────────────────────────────
+
+## SIPp: single basic call test
+sipp-basic:
+	$(DC) --profile loadtest run --rm sipp \
+	  sipp 172.20.0.50 \
+	  -sf /scenarios/basic_call.xml \
+	  -l 1 -m 1 -r 1 -trace_msg
+
+## SIPp: 10 concurrent calls (credit deduction stress test)
+sipp-concurrent:
+	$(DC) --profile loadtest run --rm sipp \
+	  sipp 172.20.0.50 \
+	  -sf /scenarios/concurrent_calls.xml \
+	  -l 10 -m 10 -r 2 -trace_msg
+
+## SIPp: credit exhaustion test (account Beta — 1.20 credit)
+sipp-credit-exhaustion:
+	$(DC) --profile loadtest run --rm sipp \
+	  sipp 172.20.0.50 \
+	  -sf /scenarios/credit_exhaustion.xml \
+	  -l 1 -m 1 -r 1 -trace_msg
+
+# ─────────────────────────────────────────
+# MONITORING / DEBUGGING
+# ─────────────────────────────────────────
+
+## Live SIP trace (requires sngrep: sudo apt install sngrep)
+sngrep:
+	sngrep -i any port 5060 or port 5080
+
+## Watch Redis credit balances in real time
+## credit:1=Alpha  credit:2=Beta  credit:3=Zero
+watch-credit:
+	watch -n1 'redis-cli MGET credit:1 credit:2 credit:3 | paste - - - | \
+	  awk "BEGIN{print \"ID  Credits(units) = Credits\"} \
+	  {printf \"  1  %-14s = %.5f EUR\n  2  %-14s = %.5f EUR\n  3  %-14s = %.5f EUR\n\", \
+	  \$$1, \$$1/100000, \$$2, \$$2/100000, \$$3, \$$3/100000}"'
+
+## Watch CDR table (statistics) for new call records
+watch-cdrs:
+	watch -n2 'psql postgresql://dev_ifx:labpass@localhost:5432/galaxy_2 -c \
+	  "SELECT id, unique_id, src_number, dst_number, \
+	          status, total_duration, conversation_duration, \
+	          credit_before, credit_after, credit_without_vat, \
+	          created_at \
+	   FROM statistics \
+	   ORDER BY created_at DESC LIMIT 10;" 2>&1'
+
+## Watch tracings (call event log)
+watch-tracings:
+	watch -n2 'psql postgresql://dev_ifx:labpass@localhost:5432/galaxy_2 -c \
+	  "SELECT t.id, t.statistics_id, t.status, t.info, \
+	          t.credit_before, t.credit_after, t.timestamp \
+	   FROM tracings t \
+	   ORDER BY t.id DESC LIMIT 20;" 2>&1'
+
+# ─────────────────────────────────────────
+# LOGS
+# ─────────────────────────────────────────
+
+## FreeSWITCH logs (host — tail the log file)
+logs-fs:
+	tail -f /var/log/freeswitch/freeswitch.log
+
+## FastAPI logs
+logs-api:
+	$(DC) logs -f api
+
+## Billing worker logs
+logs-billing:
+	$(DC) logs -f billing-worker
+
+logs-worker: logs-billing
+
+## Asterisk logs
+logs-asterisk:
+	$(DC) logs -f asterisk
+
+## All Docker services
+logs:
+	$(DC) logs -f api billing-worker asterisk
+
+# ─────────────────────────────────────────
+# DATABASE
+# ─────────────────────────────────────────
+
+## Open psql shell into lab DB
+db-shell:
+	$(DC) exec postgres psql -U dev_ifx -d galaxy_2
+
+## Apply Alembic migrations
+db-migrate:
+	$(DC) run --rm api alembic upgrade head
+
+## Reset DB data (preserves schema) and re-seed
+db-reseed:
+	$(DC) exec postgres psql -U dev_ifx -d galaxy_2 -c \
+	  "TRUNCATE statistics, tracings, consultant_ivr_numbers, \
+	   consultant_phone_numbers, consultant_statistics, \
+	   consultants, credits_customers, site_ivr_numbers, \
+	   ivr_known_users, users, countries RESTART IDENTITY CASCADE;"
+	$(DC) exec postgres psql -U dev_ifx -d galaxy_2 \
+	  -f /docker-entrypoint-initdb.d/99-seed.sql
+	@echo "✓ Lab data re-seeded"
+
+## Seed Redis credit cache from DB
+redis-seed-credit:
+	docker exec voip-redis redis-cli SET "credit:1" 100000000
+	docker exec voip-redis redis-cli SET "credit:2" 120000
+	docker exec voip-redis redis-cli SET "credit:3" 0
+	@echo "✓ Redis credit cache seeded"
+	@echo "  credit:1  = 1000.00000 EUR (Alpha)"
+	@echo "  credit:2  =    1.20000 EUR (Beta — ~2min at 0.02/min)"
+	@echo "  credit:3  =    0.00000 EUR (Zero)"
+
+## Open redis-cli
+redis-cli:
+	docker exec -it voip-redis redis-cli
+
+# ─────────────────────────────────────────
+# VERIFY
+# ─────────────────────────────────────────
+
+## Run all health checks
+verify:
+	bash $(LAB_DIR)/scripts/verify-lab.sh

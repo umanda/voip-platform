@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  lab/sipp/scenarios/basic_call.xml
+  SIPp scenario: single call end-to-end test.
+
+  Flow:
+    SIPp → INVITE +18001000001 → Asterisk → FreeSWITCH (auth.lua)
+    → FastAPI /authorize (PIN 12341001 auto-supplied via SIP header or Lua config)
+    → Bridge to consultant (ext 1002) → 30s call → BYE
+
+  NOTE: In the lab, PIN entry is DTMF-based in production IVR.
+  For automated SIPp testing, the auth.lua must be configured with
+  lab_autopin mode OR the IVR script generates DTMF automatically.
+  See lab-guide.md section "SIPp Testing — PIN Auto-Entry".
+
+  Target: Asterisk at 172.20.0.50:5060 (from SIPp container 172.20.0.60)
+  
+  Usage:
+    make -f lab/Makefile.lab sipp-basic
+-->
+<scenario name="basic_call">
+
+  <!-- ── INVITE ────────────────────────────────────────────────── -->
+  <send retrans="500">
+    <![CDATA[
+      INVITE sip:+18001000001@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: "SIPp Caller" <sip:+15005550001@[local_ip]:[local_port]>;tag=[call_number]
+      To: <sip:+18001000001@[remote_ip]:[remote_port]>
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: sip:+15005550001@[local_ip]:[local_port]
+      Max-Forwards: 70
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=sipp 53655765 2353687637 IN IP4 [local_ip]
+      s=-
+      c=IN IP4 [local_ip]
+      t=0 0
+      m=audio [media_port] RTP/AVP 8 0 101
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+    ]]>
+  </send>
+
+  <!-- ── 100 Trying (optional) ─────────────────────────────────── -->
+  <recv response="100" optional="true" />
+
+  <!-- ── 180 Ringing ───────────────────────────────────────────── -->
+  <recv response="180" optional="true" />
+
+  <!-- ── 200 OK ────────────────────────────────────────────────── -->
+  <recv response="200" rtd="true">
+    <action>
+      <ereg regexp="Contact: .*sip:([^;>]+)" search_in="msg" check_it="true" assign_to="contact_uri"/>
+    </action>
+  </recv>
+
+  <!-- ── ACK ───────────────────────────────────────────────────── -->
+  <send>
+    <![CDATA[
+      ACK [contact_uri] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: "SIPp Caller" <sip:+15005550001@[local_ip]:[local_port]>;tag=[call_number]
+      To: <sip:+18001000001@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Max-Forwards: 70
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <!-- ── Call in progress: 30 seconds ─────────────────────────── -->
+  <!-- Sends RTP audio (silence pattern) for duration              -->
+  <nop>
+    <action>
+      <exec command="sleep 30"/>
+    </action>
+  </nop>
+
+  <!-- ── BYE ───────────────────────────────────────────────────── -->
+  <send retrans="500">
+    <![CDATA[
+      BYE [contact_uri] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: "SIPp Caller" <sip:+15005550001@[local_ip]:[local_port]>;tag=[call_number]
+      To: <sip:+18001000001@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 2 BYE
+      Max-Forwards: 70
+      Content-Length: 0
+    ]]>
+  </send>
+
+  <!-- ── 200 OK to BYE ─────────────────────────────────────────── -->
+  <recv response="200" />
+
+  <!-- ── Statistics ────────────────────────────────────────────── -->
+  <ResponseTimeRepartition value="100, 200, 300, 500, 1000, 2000"/>
+  <CallLengthRepartition value="10, 20, 30, 60, 90, 120"/>
+
+</scenario>

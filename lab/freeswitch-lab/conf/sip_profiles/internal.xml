@@ -1,0 +1,98 @@
+<!--
+  lab/freeswitch-lab/conf/sip_profiles/internal.xml
+  FreeSWITCH internal SIP profile — handles Fanvil IP phones and softphones.
+
+  Fanvil-specific tuning (per user requirement):
+  - UDP AND TCP both enabled (Fanvil supports both; TCP more reliable on busy LAN)
+  - PCMA (G.711a / alaw) listed first — Fanvil prefers a-law
+  - Register expiry fixed at 60s (min = max = 60)
+
+  Extensions that register here:
+    1001  IP Phone 1 (Fanvil)
+    1002  IP Phone 2 (Fanvil)
+    1003  Softphone 1 (Linphone laptop)
+    1004  Softphone 2 (Zoiper)
+    1005  Softphone 3 (MicroSIP / Linphone mobile)
+
+  Directory: lab/freeswitch-lab/conf/directory/default/
+
+  Hot reload:
+    fs_cli -x "sofia profile internal restart"
+    (Does NOT interrupt active calls on this profile)
+-->
+<profile name="internal">
+
+  <aliases>
+    <alias name="default"/>
+  </aliases>
+
+  <gateways/>  <!-- Internal profile has no gateways — extensions only -->
+
+  <domains>
+    <domain name="all" alias="true" parse="true"/>
+  </domains>
+
+  <settings>
+
+    <!-- ── Bind addresses ─────────────────────────────────────────── -->
+    <!-- FreeSWITCH is on host network — bind to all interfaces -->
+    <param name="sip-ip"              value="0.0.0.0"/>
+    <param name="sip-port"            value="5060"/>
+    <!-- RTP binds to all interfaces too — required for LAN phones -->
+    <param name="rtp-ip"              value="0.0.0.0"/>
+
+    <!-- Fanvil requirement: enable TCP transport in addition to UDP -->
+    <param name="sip-transport"       value="udp,tcp"/>
+    <param name="tls-enable"          value="false"/>
+
+    <!-- ── Codec preferences ─────────────────────────────────────── -->
+    <!-- PCMA (alaw) first — Fanvil phones prefer G.711a          -->
+    <param name="codec-prefs"         value="$${global_codec_prefs}"/>
+    <param name="codec-negotiation"   value="generous"/>
+    <!-- DTMF: RFC 2833 telephone-event (Fanvil default) -->
+    <param name="dtmf-type"           value="rfc2833"/>
+    <param name="liberal-dtmf"        value="true"/>
+
+    <!-- ── RTP ───────────────────────────────────────────────────── -->
+    <param name="rtp-start-port"      value="$${rtp_start_port}"/>
+    <param name="rtp-end-port"        value="$${rtp_end_port}"/>
+    <!-- Do not disable RTP auto-adjust — required for phones behind NAT -->
+    <param name="disable-rtp-auto-adjust"  value="false"/>
+
+    <!-- ── Registration / Auth ───────────────────────────────────── -->
+    <!-- Fanvil requirement: register expiry fixed at 60 seconds -->
+    <param name="max-register-expiry" value="60"/>
+    <param name="min-register-expiry" value="60"/>
+    <param name="default-register-expiry" value="60"/>
+    <!-- Force re-authentication after expiry — more secure -->
+    <param name="register-attempt-limit" value="3"/>
+    <param name="auth-calls"          value="true"/>
+    <param name="auth-all-packets"    value="false"/>
+
+    <!-- ── NAT handling ──────────────────────────────────────────── -->
+    <!-- Needed for softphones that may be on separate subnets -->
+    <param name="apply-nat-acl"       value="rfc1918"/>
+    <param name="local-network-acl"   value="localnet.auto"/>
+    <param name="nat-options-ping"    value="true"/>
+
+    <!-- ── Context ───────────────────────────────────────────────── -->
+    <!-- All calls from registered phones go to the internal context -->
+    <param name="context"             value="internal"/>
+
+    <!-- ── Call tuning ───────────────────────────────────────────── -->
+    <param name="inbound-codec-prefs" value="$${global_codec_prefs}"/>
+    <param name="outbound-codec-prefs" value="$${global_codec_prefs}"/>
+    <param name="inbound-codec-negotiation" value="generous"/>
+    <param name="hold-music"          value="local_stream://moh"/>
+    <!-- Reasonable call timer — up to 2 hours per session -->
+    <param name="session-timeout"     value="7200"/>
+    <!-- Keep registration alive on LAN -->
+    <param name="send-message-query-on-register" value="false"/>
+
+    <!-- ── Logging ───────────────────────────────────────────────── -->
+    <param name="log-auth-failures"   value="true"/>
+    <param name="debug"               value="0"/>
+
+  </settings>
+
+</profile>

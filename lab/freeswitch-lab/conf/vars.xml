@@ -1,0 +1,61 @@
+<!--
+  lab/freeswitch-lab/conf/vars.xml — FreeSWITCH global variables for the lab.
+
+  Differences from production vars.xml:
+  - voip_api_base_url points to FastAPI port-mapped to localhost (FS is on host net)
+  - voip_default_gateway = asterisk-lab (not voxbone-outbound)
+  - Codec order: PCMA first (Fanvil phones prefer G.711a)
+  - No Voxbone credentials needed
+  - INTERNAL_TOKEN injected via Docker environment via docker-entrypoint.sh
+
+  Hot reload after changes:
+    fs_cli -x "reloadxml"
+-->
+<include>
+
+  <!-- FastAPI endpoint — port-mapped 8000 on host -->
+  <X-PRE-PROCESS cmd="set" data="voip_api_base_url=http://127.0.0.1:8000"/>
+
+  <!-- Internal service token — injected from Docker env INTERNAL_TOKEN at startup -->
+  <!-- The entrypoint.sh writes this via: fs_cli -x "global_setvar voip_internal_token=..." -->
+  <X-PRE-PROCESS cmd="set" data="voip_internal_token="/>
+
+  <!-- Sound file paths -->
+  <X-PRE-PROCESS cmd="set" data="voip_sounds_base=/usr/share/freeswitch/sounds/galaxy/"/>
+  <X-PRE-PROCESS cmd="set" data="voip_digits_base=/usr/share/freeswitch/sounds/galaxy/en/digit/"/>
+
+  <!-- IVR tuning — same as production -->
+  <X-PRE-PROCESS cmd="set" data="voip_auth_attempts=3"/>
+  <X-PRE-PROCESS cmd="set" data="voip_pin_length=8"/>
+  <X-PRE-PROCESS cmd="set" data="voip_dtmf_timeout_ms=5000"/>
+
+  <!-- HTTP timeouts (ms) — R-SIP-01: auth ≤ 2000ms -->
+  <X-PRE-PROCESS cmd="set" data="voip_http_timeout_ms=2000"/>
+  <X-PRE-PROCESS cmd="set" data="voip_tick_timeout_ms=1500"/>
+
+  <!-- Credit warning thresholds -->
+  <X-PRE-PROCESS cmd="set" data="voip_warn_remaining_seconds=320"/>
+  <X-PRE-PROCESS cmd="set" data="voip_beep_remaining_seconds=10"/>
+
+  <!-- LAB: default gateway is asterisk-lab (not voxbone-outbound) -->
+  <X-PRE-PROCESS cmd="set" data="voip_default_gateway=asterisk-lab"/>
+
+  <!-- LAB: Codec prefs — PCMA first for Fanvil phones -->
+  <X-PRE-PROCESS cmd="set" data="global_codec_prefs=PCMA,PCMU,G729,OPUS"/>
+  <X-PRE-PROCESS cmd="set" data="outbound_codec_prefs=PCMA,PCMU"/>
+
+  <!-- RTP port range — must be open on host for LAN phones -->
+  <X-PRE-PROCESS cmd="set" data="rtp_start_port=16384"/>
+  <X-PRE-PROCESS cmd="set" data="rtp_end_port=32768"/>
+
+  <!-- LAB: Asterisk carrier IP (Docker container at fixed IP) -->
+  <X-PRE-PROCESS cmd="set" data="lab_asterisk_ip=172.20.0.50"/>
+  <X-PRE-PROCESS cmd="set" data="lab_asterisk_port=5060"/>
+
+  <!-- LAB: no Voxbone credentials needed -->
+  <X-PRE-PROCESS cmd="set" data="voxbone_username=lab"/>
+  <X-PRE-PROCESS cmd="set" data="voxbone_password=lab"/>
+  <X-PRE-PROCESS cmd="set" data="voxbone_realm=172.20.0.50"/>
+  <X-PRE-PROCESS cmd="set" data="voxbone_proxy=172.20.0.50"/>
+
+</include>
