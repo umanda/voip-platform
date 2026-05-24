@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+  autoload_configs/logfile.conf.xml — File-based logging for the lab.
+  Logs go to /var/log/freeswitch/ (Docker volume: freeswitch-logs).
+-->
+<configuration name="logfile.conf" description="File Logging">
+  <settings>
+    <param name="rotate-on-hup" value="true"/>
+  </settings>
+  <profiles>
+    <profile name="default">
+      <settings>
+        <param name="logfile"   value="/var/log/freeswitch/freeswitch.log"/>
+        <param name="rollover"  value="10485760"/>
+        <param name="maximum-rotate" value="5"/>
+      </settings>
+      <mappings>
+        <map name="all"  value="debug,info,notice,warning,err,crit,alert"/>
+      </mappings>
+    </profile>
+  </profiles>
+</configuration>

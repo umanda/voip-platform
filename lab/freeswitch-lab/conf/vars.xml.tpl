@@ -68,4 +68,8 @@
   <X-PRE-PROCESS cmd="set" data="lab_asterisk_ip=172.28.0.50"/>
   <X-PRE-PROCESS cmd="set" data="lab_asterisk_port=5060"/>
 
+  <!-- Domain: resolves to host machine IP — Fanvil phones register to this -->
+  <X-PRE-PROCESS cmd="set" data="domain=$${local_ip_v4}"/>
+  <X-PRE-PROCESS cmd="set" data="default_provider=$${voip_default_gateway}"/>
+
 </include>

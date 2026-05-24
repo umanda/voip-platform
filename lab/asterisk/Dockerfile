@@ -24,6 +24,13 @@ RUN apt-get update && \
 # Remove default config (we provide our own)
 RUN rm -rf /etc/asterisk/*
 
+# Create runtime directories Asterisk needs (not created by the package on Ubuntu)
+RUN mkdir -p \
+    /var/run/asterisk \
+    /var/lib/asterisk/agi-bin \
+    /var/log/asterisk/cdr-csv \
+    && chown -R asterisk:asterisk /var/run/asterisk /var/lib/asterisk /var/log/asterisk
+
 # Our minimal config is mounted via volume in docker-compose.lab.yml
 # (./asterisk/conf:/etc/asterisk)
 

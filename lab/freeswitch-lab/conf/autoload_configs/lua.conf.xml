@@ -1,0 +1,24 @@
+<!--
+  conf/autoload_configs/lua.conf.xml — FreeSWITCH Lua module configuration.
+
+  Sets the script directory and startup script path.
+
+  Hot reload after Lua script changes:
+    fs_cli -x "reload mod_lua"
+  (No FreeSWITCH restart needed — R-INFRA-03)
+
+  Migration Notes:
+    Legacy: mod_perl loaded via autoload_configs/perl.conf.xml
+            Scripts in /usr/share/freeswitch/scripts/sofia/bin/
+    New:    mod_lua — native FreeSWITCH module, lower latency, no forking
+            Scripts in /usr/share/freeswitch/scripts/lua/
+-->
+<configuration name="lua.conf" description="Lua Configuration">
+  <settings>
+    <!-- Absolute path to the Lua scripts root — all require() paths are relative here -->
+    <param name="script-directory" value="/usr/share/freeswitch/scripts/lua/"/>
+
+    <!-- startup-script runs once at module load — use for global init if needed -->
+    <!-- <param name="startup-script" value="startup.lua"/> -->
+  </settings>
+</configuration>

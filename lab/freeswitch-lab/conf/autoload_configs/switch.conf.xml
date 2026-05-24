@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<!--
+  autoload_configs/switch.conf.xml — FreeSWITCH core settings.
+  Lab environment: relaxed limits, verbose logging, short timeouts.
+-->
+<configuration name="switch.conf" description="Core Configuration">
+  <settings>
+    <!-- Directories -->
+    <param name="log-dir"           value="/var/log/freeswitch"/>
+    <param name="run-dir"           value="/var/run/freeswitch"/>
+    <param name="db-dir"            value="/var/lib/freeswitch/db"/>
+    <param name="mod-dir"           value="/usr/lib/freeswitch/mod"/>
+    <param name="scripts-dir"       value="/usr/share/freeswitch/scripts"/>
+    <param name="sounds-dir"        value="/usr/share/freeswitch/sounds"/>
+
+    <!-- Session control -->
+    <param name="max-sessions"      value="1000"/>
+    <param name="sessions-per-second" value="30"/>
+    <param name="min-idle-cpu"      value="0"/>
+
+    <!-- Logging -->
+    <param name="loglevel"          value="info"/>
+    <param name="mailer-app"        value="sendmail"/>
+
+    <!-- Don't require real-time scheduling — Docker containers can't get SCHED_FIFO -->
+    <param name="colorize-console"  value="true"/>
+    <param name="crash-protection"  value="false"/>
+
+    <!-- Disable SIP auto-nat — FreeSWITCH is on host network, not behind NAT -->
+    <param name="auto-create-schemas" value="true"/>
+    <param name="auto-clear-sql"    value="true"/>
+  </settings>
+</configuration>

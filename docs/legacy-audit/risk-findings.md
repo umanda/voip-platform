@@ -25,9 +25,9 @@
 **Lines:**
 ```ini
 [aws]
-aws_access_key_id = REDACTED_AWS_ACCESS_KEY
-aws_secret_access_key = REDACTED_AWS_SECRET_KEY
-recording_bucket = webgroup-sofia-recordings
+aws_access_key_id = <REMOVED>
+aws_secret_access_key = <REMOVED>
+recording_bucket = <REMOVED>
 ```
 
 **Risk:** Any person with read access to the Sofia repository has live AWS credentials. If these keys have `s3:*` or broader permissions, they could be used to exfiltrate all call recordings, or to access other AWS services in the account. If the repo has ever been pushed to a remote (GitHub, GitLab, Bitbucket), the credentials are likely already in git history even if removed now.

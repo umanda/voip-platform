@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+  autoload_configs/sofia.conf.xml — Sofia SIP stack global settings.
+  Lab environment.
+
+  The actual SIP profiles (internal + external) are defined in
+  sip_profiles/internal.xml and sip_profiles/external.xml which Sofia
+  auto-discovers at startup via the glob below.
+-->
+<configuration name="sofia.conf" description="Sofia SIP">
+
+  <global_settings>
+    <param name="log-level"         value="0"/>
+    <param name="debug-presence"    value="0"/>
+    <param name="capture-server"    value="udp:0.0.0.0:9060"/>
+  </global_settings>
+
+  <profiles>
+    <X-PRE-PROCESS cmd="include" data="/etc/freeswitch/sip_profiles/*.xml"/>
+  </profiles>
+
+</configuration>

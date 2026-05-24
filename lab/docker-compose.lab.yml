@@ -47,8 +47,11 @@ services:
       voip-lab:
         ipv4_address: 172.28.0.50
     ports:
-      - "5080:5060/udp"   # SIP UDP — host:5080 maps to Asterisk container:5060
-      - "5080:5060/tcp"   # SIP TCP
+      # Expose Asterisk SIP on host:5090 for diagnostics only.
+      # FreeSWITCH (host network) reaches Asterisk via Docker network: 172.28.0.50:5060
+      # Asterisk reaches FreeSWITCH external profile via host.docker.internal:5080
+      - "5090:5060/udp"
+      - "5090:5060/tcp"
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Resolves to host machine IP (Docker Engine 20.10+)
     volumes:
@@ -99,13 +102,10 @@ services:
     volumes:
       # Lua scripts — hot reload from host filesystem
       - ../freeswitch/lua:/usr/share/freeswitch/scripts
-      # Lab-specific config overrides (individual files only — preserves base image config)
-      - ./freeswitch-lab/conf/vars.xml.tpl:/etc/freeswitch/vars.xml.tpl
-      - ./freeswitch-lab/conf/sip_profiles/internal.xml:/etc/freeswitch/sip_profiles/internal.xml
-      - ./freeswitch-lab/conf/sip_profiles/external.xml:/etc/freeswitch/sip_profiles/external.xml
-      - ./freeswitch-lab/conf/dialplan/default.xml:/etc/freeswitch/dialplan/default.xml
-      - ./freeswitch-lab/conf/dialplan/internal.xml:/etc/freeswitch/dialplan/internal.xml
-      - ./freeswitch-lab/conf/directory/default:/etc/freeswitch/directory/default
+      # Full lab config directory — includes freeswitch.xml, autoload_configs/, dialplan/,
+      # directory/, sip_profiles/, vars.xml.tpl.
+      # The entrypoint writes vars.xml and event_socket.conf.xml into this mount at runtime.
+      - ./freeswitch-lab/conf:/etc/freeswitch
       - freeswitch-logs:/var/log/freeswitch
     restart: unless-stopped
     depends_on:
@@ -131,6 +131,7 @@ services:
       - INTERNAL_JWT_SECRET=${INTERNAL_JWT_SECRET}
       - ENVIRONMENT=lab
       - LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -167,6 +168,7 @@ services:
       - FREESWITCH_ESL_PORT=8021
       - FREESWITCH_ESL_PASSWORD=${FS_ESL_PASSWORD:-ClueCon}
       - LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app
     depends_on:
       postgres:
         condition: service_healthy

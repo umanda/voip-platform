@@ -47,7 +47,9 @@ https://freeswitch.signalwire.com/repo/deb/debian-release/ $(lsb_release -sc) ma
         freeswitch-mod-loopback \
         freeswitch-mod-tone-stream \
         freeswitch-mod-sndfile \
-        freeswitch-sounds-en-us-callie-8000 \
+        freeswitch-mod-dialplan-xml \
+        freeswitch-mod-console \
+        freeswitch-mod-logfile \
         lua5.1 \
         liblua5.1-dev \
         lua-socket \
@@ -61,6 +63,18 @@ https://freeswitch.signalwire.com/repo/deb/debian-release/ $(lsb_release -sc) ma
 RUN which fs_cli 2>/dev/null || ( \
     test -x /usr/bin/fs_cli && ln -s /usr/bin/fs_cli /usr/local/bin/fs_cli \
 ) || true
+
+# FreeSWITCH installed via SignalWire packages but default config (freeswitch-conf-vanilla)
+# is not installed — we mount our own config. Ensure required directories exist so the
+# production entrypoint (docker-entrypoint.sh) can write event_socket.conf.xml.
+RUN mkdir -p \
+    /etc/freeswitch/autoload_configs \
+    /etc/freeswitch/dialplan \
+    /etc/freeswitch/directory \
+    /etc/freeswitch/sip_profiles \
+    /var/log/freeswitch \
+    /var/run/freeswitch \
+    && chown -R freeswitch:freeswitch /etc/freeswitch /var/log/freeswitch /var/run/freeswitch 2>/dev/null || true
 
 # ── Lua scripts ───────────────────────────────────────────────────────────────
 # Path must match lua.conf.xml: /usr/share/freeswitch/scripts/lua/

@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<!--
+  autoload_configs/acl.conf.xml — FreeSWITCH Access Control Lists
+  Lab environment.
+
+  FreeSWITCH's built-in lan.auto does NOT include 127.0.0.1 (loopback).
+  The production docker-entrypoint.sh generates event_socket.conf.xml with
+  "apply-inbound-acl lan.auto", which blocks fs_cli from 127.0.0.1.
+
+  This file overrides the auto-generated lan.auto with a custom ACL that
+  explicitly includes 127.0.0.1 so fs_cli and the billing-worker ESL client
+  can connect from localhost.
+-->
+<configuration name="acl.conf" description="Network ACLs">
+  <network-lists>
+
+    <!--
+      lan.auto override: allow loopback + all RFC 1918 private ranges.
+      Must be named exactly "lan.auto" to shadow the built-in auto-generated ACL.
+    -->
+    <list name="lan.auto" default="deny">
+      <!-- Loopback — fs_cli connects from here -->
+      <node type="allow" cidr="127.0.0.0/8"/>
+      <!-- Docker bridge networks (voip-lab: 172.28.0.0/24) -->
+      <node type="allow" cidr="172.16.0.0/12"/>
+      <!-- AWS VPC / internal LAN -->
+      <node type="allow" cidr="10.0.0.0/8"/>
+      <node type="allow" cidr="192.168.0.0/16"/>
+    </list>
+
+    <!-- Explicit loopback ACL used by Sofia internal profile -->
+    <list name="loopback.auto" default="deny">
+      <node type="allow" cidr="127.0.0.0/8"/>
+    </list>
+
+  </network-lists>
+</configuration>

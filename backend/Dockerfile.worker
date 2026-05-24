@@ -46,6 +46,7 @@ COPY app/config.py   ./app/config.py
 COPY app/__init__.py ./app/__init__.py
 COPY app/core/       ./app/core/
 COPY app/models/     ./app/models/
+COPY app/services/   ./app/services/
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1

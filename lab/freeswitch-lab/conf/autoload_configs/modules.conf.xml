@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<!--
+  autoload_configs/modules.conf.xml — FreeSWITCH module loading list
+  Lab environment: only modules installed by the SignalWire apt packages.
+
+  Installed packages: freeswitch freeswitch-mod-sofia freeswitch-mod-lua
+    freeswitch-mod-dptools freeswitch-mod-commands freeswitch-mod-event-socket
+    freeswitch-mod-loopback freeswitch-mod-tone-stream freeswitch-mod-sndfile
+    freeswitch-mod-dialplan-xml freeswitch-mod-console freeswitch-mod-logfile
+-->
+<configuration name="modules.conf" description="Modules">
+  <modules>
+
+    <!-- ── Logging ─────────────────────────────────────────────────────── -->
+    <load module="mod_logfile"/>
+    <load module="mod_console"/>
+
+    <!-- ── Dialplan ────────────────────────────────────────────────────── -->
+    <load module="mod_dialplan_xml"/>
+
+    <!-- ── SIP ─────────────────────────────────────────────────────────── -->
+    <load module="mod_sofia"/>
+    <load module="mod_loopback"/>
+
+    <!-- ── Audio ───────────────────────────────────────────────────────── -->
+    <load module="mod_sndfile"/>
+    <load module="mod_tone_stream"/>
+
+    <!-- ── Scripting ───────────────────────────────────────────────────── -->
+    <load module="mod_lua"/>
+
+    <!-- ── Call control ────────────────────────────────────────────────── -->
+    <load module="mod_dptools"/>
+    <load module="mod_commands"/>
+
+    <!-- ── Event Socket Layer (billing worker + fs_cli) ────────────────── -->
+    <load module="mod_event_socket"/>
+
+  </modules>
+</configuration>
