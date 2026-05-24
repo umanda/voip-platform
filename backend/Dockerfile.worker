@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1
+##
+## Dockerfile.worker — Billing Worker container
+##
+## Migration Notes:
+##   Replaces the synchronous Perl checkServiceType.pl ESL handler.
+##   Async ESL consumer: subscribes to CHANNEL_HANGUP_COMPLETE, CHANNEL_ANSWER.
+##   Shares requirements.txt with the API but has a minimal COPY footprint.
+##
+## Build:
+##   docker build -t voip-worker:local -f Dockerfile.worker .
+##
+## No health-check port — worker has no HTTP listener.
+## ECS unhealthy detection: CloudWatch alarm on RunningTaskCount + ESL disconnect metric.
+##
+## NOTE: Alpine-based for small image size. asyncpg compiles on Alpine musl.
+
+FROM python:3.11-alpine AS builder
+
+WORKDIR /app
+
+COPY requirements.prod.txt .
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    libpq-dev \
+    linux-headers \
+    && pip install --no-cache-dir --prefix=/install -r requirements.prod.txt
+
+FROM python:3.11-alpine AS runtime
+
+WORKDIR /app
+
+# Runtime library for asyncpg
+RUN apk add --no-cache libpq
+
+COPY --from=builder /install /usr/local
+
+# Copy only the modules the worker actually needs:
+#   billing_worker/   — ESL client, event handlers, CDR service
+#   app/config.py     — Settings (DATABASE_URL, REDIS_URL, ESL credentials)
+#   app/core/         — Database engine, Redis pool, logging, exceptions
+#   app/models/       — SQLAlchemy ORM models (Statistics, Tracings, Consultants…)
+COPY billing_worker/ ./billing_worker/
+COPY app/config.py   ./app/config.py
+COPY app/__init__.py ./app/__init__.py
+COPY app/core/       ./app/core/
+COPY app/models/     ./app/models/
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# No health check port — worker doesn't listen on any port.
+# ECS detects worker crash via task-level health: RunningTaskCount CloudWatch alarm.
+
+CMD ["python", "-m", "billing_worker.worker"]

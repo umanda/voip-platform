@@ -1,0 +1,63 @@
+##
+## docker-compose.test.yml — Test environment for isolated pytest runs
+##
+## Provides a clean database and Redis for each test run.
+## Overrides API and worker configs for test isolation.
+##
+## Usage:
+##   docker compose -f docker-compose.test.yml run --rm api pytest tests/ -v
+##   make test              # convenience wrapper
+##   make test-coverage     # with HTML coverage report
+
+name: voip-platform-test
+
+services:
+
+  # ── Test PostgreSQL — ephemeral (no volume, dropped after test run) ─────────
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB:       galaxy_2_test
+      POSTGRES_USER:     test_ifx
+      POSTGRES_PASSWORD: test_password
+    tmpfs:
+      - /var/lib/postgresql/data   # In-memory — fast, ephemeral
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_ifx -d galaxy_2_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Test Redis — ephemeral ───────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save ""    # No persistence — test isolation
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── API + pytest runner ──────────────────────────────────────────────────────
+  # Run tests via: docker compose -f docker-compose.test.yml run --rm api pytest ...
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: test          # Uses the test stage which includes pytest/httpx
+    command: echo "Use 'run --rm api pytest ...' not 'up'"
+    environment:
+      DATABASE_URL:        "postgresql+asyncpg://test_ifx:test_password@postgres:5432/galaxy_2_test"
+      REDIS_URL:           "redis://redis:6379"
+      INTERNAL_JWT_SECRET: "test-secret-for-pytest-min-32-chars-padding"
+      ENVIRONMENT:         "test"
+      DEBUG:               "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Mount source so pytest picks up latest code without rebuild
+      - ./backend:/app
+    working_dir: /app

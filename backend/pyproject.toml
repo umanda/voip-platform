@@ -17,6 +17,10 @@ plugins = ["pydantic.mypy"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
+cache_dir = "/tmp/.pytest_cache"
+markers = [
+    "integration: end-to-end tests that require a live API server (deselect with -m 'not integration')",
+]
 
 [tool.pydantic-mypy]
 init_forbid_extra = true

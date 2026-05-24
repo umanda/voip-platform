@@ -1,0 +1,30 @@
+##
+## monitoring/prometheus.yml — Prometheus scrape configuration
+##
+## Metrics collected:
+##   - FastAPI (uvicorn metrics via /metrics endpoint — add prometheus-fastapi-instrumentator)
+##   - Redis (redis_exporter sidecar — add to compose if needed)
+##   - Node metrics (node_exporter — add to compose if needed)
+##
+## For Phase 8 (Monitoring), this config will be extended with:
+##   - CloudWatch metrics exporter
+##   - FreeSWITCH ESL metrics (active calls, SIP registration status)
+##   - Billing worker lag metrics
+
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: 'local-dev'
+
+scrape_configs:
+  # FastAPI application metrics
+  - job_name: 'voip-api'
+    static_configs:
+      - targets: ['api:8000']
+    metrics_path: '/metrics'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
