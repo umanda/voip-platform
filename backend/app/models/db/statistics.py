@@ -1,5 +1,4 @@
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String
-from sqlalchemy.sql import func
 
 from app.models.db.base import Base
 
@@ -58,21 +57,5 @@ class Statistics(Base):
     consultant_earning_for_minute = Column(Numeric(10, 5), nullable=False, default=0)
     consultant_total_earning = Column(Numeric(10, 5), nullable=True)
     credit_without_vat = Column(Numeric(10, 5), nullable=True)
-    surcharge_amount = Column(Numeric(10, 5), nullable=True)
-    allocated_vat_amount = Column(Numeric(10, 5), nullable=True)
-
-    # Currency context (captured at call setup — rates may change, lock them in)
-    customer_currency_code = Column(String(10), nullable=False, default="eur")
-    customer_currency_rate = Column(Numeric(10, 5), nullable=False, default=1)
-    coach_currency_code = Column(String(10), nullable=False, default="eur")
-    coach_currency_rate = Column(Numeric(10, 5), nullable=False, default=1)
-    company_and_coach_currency_rate = Column(Numeric(10, 5), nullable=True)
-    company_and_customer_currency_rate = Column(Numeric(10, 5), nullable=True)
-
-    # Final call disposition
-    # Values: NORMAL / SHORT CALL / NO ANSWER / DISCONNECT /
-    #         REMOTE BUSY / LOCAL_BUSY / EXTERNAL_BUSY / CUSTOMER_HANGUP_BEFORE_ANSWER
-    status = Column(String, nullable=True)
-
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    hangup_cause = Column(String, nullable=True)
+    status = Column(Integer, nullable=False, default=0)

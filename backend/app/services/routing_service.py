@@ -99,7 +99,7 @@ async def lookup_known_user(
     """
     normalized = src_number.lstrip("+")
     result = await db.execute(
-        select(IvrKnownUser).where(IvrKnownUser.number == normalized)
+        select(IvrKnownUser).where(IvrKnownUser.caller_id == normalized)
     )
     return result.scalar_one_or_none()
 

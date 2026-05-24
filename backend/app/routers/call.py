@@ -157,10 +157,6 @@ async def authorize_call(
             credit_after=current_credits,  # placeholder — updated at hangup
             coach_rate=call_rate,
             vat_rate=vat_rate,
-            customer_currency_code=customer.currency_code,
-            customer_currency_rate=Decimal("1.0"),
-            coach_currency_code=consultant.currency_code if consultant else "eur",
-            coach_currency_rate=fx_rate,
             consultant_earning_for_minute=rate_per_minute,
         )
         db.add(stats_stub)

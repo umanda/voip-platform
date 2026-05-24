@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import Column, Integer, String
 
 from app.models.db.base import Base
 
@@ -16,7 +16,6 @@ class IvrKnownUser(Base):
 
     __tablename__ = "ivr_known_users"
 
-    # id column is assumed — validate against live DB (schema-map.md §8 SQL query 5)
     id = Column(Integer, primary_key=True)
-    number = Column(String, nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    caller_id = Column(String, nullable=False, index=True)
+    credit_code = Column(String(8), nullable=False)
