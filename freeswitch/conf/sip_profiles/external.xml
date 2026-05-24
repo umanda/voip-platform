@@ -1,0 +1,89 @@
+<!--
+  conf/sip_profiles/external.xml — Voxbone SIP trunk (inbound + outbound).
+
+  This profile handles:
+  - Inbound: Voxbone routes PSTN calls to our DID numbers here
+  - Outbound: We bridge calls to consultants through the voxbone-outbound gateway
+
+  Credentials must be injected at runtime from AWS Secrets Manager.
+  Variables $${voxbone_username} etc. are set in conf/vars.xml from Secrets Manager.
+
+  Migration Notes:
+    Legacy: sofia.conf [providers] + FreeSWITCH gateway config (manual)
+    New:    Managed via this file; hot-reloadable with `sofia profile external restart`
+
+  R-INFRA-01: FreeSWITCH EC2 must have Elastic IP — Voxbone requires static IP.
+  R-INFRA-02: UDP 16384-32768 must be open bidirectionally in the security group.
+  R-MEDIA-01: Codec order: PCMU > PCMA > G729 > Opus.
+  R-MEDIA-02: RFC 2833 DTMF — telephone-event RTP payload.
+
+  Hot reload:
+    fs_cli -x "sofia profile external restart"
+    (Does not interrupt active calls on this profile)
+-->
+<profile name="external">
+
+  <aliases/>
+
+  <gateways>
+    <!--
+      voxbone-outbound — Voxbone SIP trunk for outbound call legs.
+
+      Name must match voip_default_gateway in vars.xml and provider_slot_map
+      in backend/app/services/routing_service.py (get_gateway_from_consultant).
+
+      Credentials: injected from AWS Secrets Manager at startup.
+      DO NOT hardcode username/password here.
+    -->
+    <gateway name="voxbone-outbound">
+      <param name="username"              value="$${voxbone_username}"/>
+      <param name="password"              value="$${voxbone_password}"/>
+      <param name="realm"                 value="$${voxbone_realm}"/>
+      <param name="proxy"                 value="$${voxbone_proxy}"/>
+      <param name="register"              value="true"/>
+      <param name="register-transport"    value="udp"/>
+      <param name="expire-seconds"        value="3600"/>
+      <param name="retry-seconds"         value="30"/>
+      <param name="ping"                  value="30"/>
+      <!-- Preserve P-Asserted-Identity through outbound leg (R-SIP-02) -->
+      <param name="caller-id-in-from"     value="true"/>
+      <!-- Outbound call timeout — matches legacy sofia.conf [serviceDesk] call_timeout -->
+      <param name="timeout-seconds"       value="30"/>
+    </gateway>
+  </gateways>
+
+  <settings>
+    <!-- SIP bind address — must be the instance's private IP (EIP NAT handled by AWS) -->
+    <param name="sip-ip"             value="$${local_ip_v4}"/>
+    <param name="sip-port"           value="5080"/>
+    <param name="ext-sip-ip"         value="$${external_sip_ip}"/>
+    <param name="ext-rtp-ip"         value="$${external_sip_ip}"/>
+
+    <!-- RTP port range — R-INFRA-02 -->
+    <param name="rtp-start-port"     value="$${rtp_start_port}"/>
+    <param name="rtp-end-port"       value="$${rtp_end_port}"/>
+
+    <!-- Codec order — R-MEDIA-01 -->
+    <param name="codec-prefs"        value="$${outbound_codec_prefs}"/>
+    <param name="codec-negotiation"  value="generous"/>
+
+    <!-- DTMF mode — R-MEDIA-02: RFC 2833 as primary -->
+    <param name="dtmf-type"          value="rfc2833"/>
+    <param name="liberal-dtmf"       value="true"/>
+
+    <!-- Do not disable re-INVITE — required for hold/resume (R-SIP-04) -->
+    <param name="disable-rtp-auto-adjust"     value="false"/>
+
+    <!-- Context that routes inbound calls from Voxbone -->
+    <param name="context"            value="default"/>
+
+    <param name="inbound-codec-prefs"  value="$${global_codec_prefs}"/>
+    <param name="outbound-codec-prefs" value="$${outbound_codec_prefs}"/>
+
+    <!-- Inbound call handling -->
+    <param name="auth-calls"         value="false"/>
+    <param name="accept-blind-reg"   value="false"/>
+    <param name="accept-blind-auth"  value="false"/>
+  </settings>
+
+</profile>

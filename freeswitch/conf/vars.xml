@@ -1,0 +1,62 @@
+<!--
+  conf/vars.xml — Global variables for the VoIP platform.
+
+  These are read by Lua scripts via freeswitch.getGlobalVariable().
+  Secrets (voip_internal_token, voxbone credentials) must be injected
+  at runtime from AWS Secrets Manager — never hardcoded here.
+
+  Injection pattern (EC2 user-data or startup script):
+    aws secretsmanager get-secret-value ... | \
+    fs_cli -x "global_setvar voip_internal_token=<value>"
+
+  Migration Notes:
+    Legacy: sofia.conf INI file read via Config::Tiny (getConfValue in utils.pm)
+    New:    FreeSWITCH global vars — hot-reloadable without FS restart.
+
+  Hot reload after changing this file:
+    fs_cli -x "reloadxml"
+-->
+<include>
+
+  <!-- FastAPI endpoint — update to ECS ALB DNS name in production -->
+  <X-PRE-PROCESS cmd="set" data="voip_api_base_url=http://127.0.0.1:8000"/>
+
+  <!-- Internal service token — INJECTED AT RUNTIME from Secrets Manager -->
+  <!-- DO NOT commit a real token here                                    -->
+  <X-PRE-PROCESS cmd="set" data="voip_internal_token="/>
+
+  <!-- Sound file paths — match FreeSWITCH install layout -->
+  <X-PRE-PROCESS cmd="set" data="voip_sounds_base=/usr/share/freeswitch/sounds/galaxy/"/>
+  <X-PRE-PROCESS cmd="set" data="voip_digits_base=/usr/share/freeswitch/sounds/galaxy/en/digit/"/>
+
+  <!-- IVR tuning — matches legacy sofia.conf [auth] and [dial_coach] -->
+  <X-PRE-PROCESS cmd="set" data="voip_auth_attempts=3"/>
+  <X-PRE-PROCESS cmd="set" data="voip_pin_length=8"/>
+  <X-PRE-PROCESS cmd="set" data="voip_dtmf_timeout_ms=5000"/>
+
+  <!-- HTTP timeouts (milliseconds) — R-SIP-01: auth ≤ 2000ms -->
+  <X-PRE-PROCESS cmd="set" data="voip_http_timeout_ms=2000"/>
+  <X-PRE-PROCESS cmd="set" data="voip_tick_timeout_ms=1500"/>
+
+  <!-- Credit warning thresholds — matches sofia.conf warn/beep time limits -->
+  <X-PRE-PROCESS cmd="set" data="voip_warn_remaining_seconds=320"/>
+  <X-PRE-PROCESS cmd="set" data="voip_beep_remaining_seconds=10"/>
+
+  <!-- Default gateway — matches sofia.conf [providers] provider1 -->
+  <X-PRE-PROCESS cmd="set" data="voip_default_gateway=voxbone-outbound"/>
+
+  <!-- Voxbone SIP trunk credentials — INJECTED AT RUNTIME from Secrets Manager -->
+  <X-PRE-PROCESS cmd="set" data="voxbone_username="/>
+  <X-PRE-PROCESS cmd="set" data="voxbone_password="/>
+  <X-PRE-PROCESS cmd="set" data="voxbone_realm=sip.voxbone.com"/>
+  <X-PRE-PROCESS cmd="set" data="voxbone_proxy=sip.voxbone.com"/>
+
+  <!-- Codec preferences — R-MEDIA-01: G.711 first -->
+  <X-PRE-PROCESS cmd="set" data="global_codec_prefs=PCMU,PCMA,G729,OPUS"/>
+  <X-PRE-PROCESS cmd="set" data="outbound_codec_prefs=PCMU,PCMA,G729"/>
+
+  <!-- RTP port range — R-INFRA-02: must be open bidirectionally in SG -->
+  <X-PRE-PROCESS cmd="set" data="rtp_start_port=16384"/>
+  <X-PRE-PROCESS cmd="set" data="rtp_end_port=32768"/>
+
+</include>

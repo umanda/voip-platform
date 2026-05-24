@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PGPASSWORD=\"\" psql -h localhost -p 5432 -U dev_ifx -d galaxy_2 -c \"\\\\dt\")",
+      "Bash(mkdir -p /mnt/harddisk/Projects/TelcoApp/voip-platform/docs/legacy-audit)",
+      "Bash(docker compose *)",
+      "Bash(curl -s http://localhost:8080/health)",
+      "Bash(python3 -m json.tool)",
+      "Read(//etc/postgresql/**)",
+      "Read(//etc/**)",
+      "Bash(grep -v \"^$\")",
+      "Bash(sudo grep -v \"^#\" /etc/postgresql/16/main/pg_hba.conf)",
+      "Read(//usr/share/freeswitch/scripts/sofia/lib/**)",
+      "Read(//usr/share/**)",
+      "Bash(curl -s -X POST http://localhost:8080/v1/call/authorize -H 'Content-Type: application/json' -d '{ *)"
+    ],
+    "additionalDirectories": [
+      "/mnt/harddisk/Projects/TelcoApp/voip-platform/docs"
+    ]
+  }
+}

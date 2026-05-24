@@ -1,0 +1,31 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    volumes:
+      - .:/app
+
+  billing_worker:
+    build: .
+    command: python -m billing_worker.worker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    volumes:
+      - .:/app
+
+  redis:
+    image: redis:7-alpine
+    # No host port binding — Redis is internal to the compose network.
+    # The host already runs Redis on 127.0.0.1:6379; exposing 6379 would conflict.
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru

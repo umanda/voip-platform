@@ -1,0 +1,66 @@
+<!--
+  conf/dialplan/default.xml — Inbound call routing for VoIP platform.
+
+  All inbound calls from Voxbone arrive on the external SIP profile and
+  are handled here. The flow:
+    1. lua dialplan/auth.lua  — answers call, collects PIN, calls FastAPI /authorize
+    2. bridge                 — connects caller to consultant via voxbone-outbound gateway
+    3. lua billing/hangup.lua — logs hangup cause for billing worker CDR
+
+  Channel variables set by auth.lua and used here:
+    voip_gateway             — SIP gateway name (e.g. "voxbone-outbound")
+    voip_destination_number  — consultant number without '+' (e.g. "3265664982")
+
+  Migration Notes:
+    Legacy: FreeSWITCH XML dialplan invoked mod_perl:
+              <action application="perl" data="bin/checkServiceType.pl"/>
+    New:    mod_lua — same position in dialplan, no other change to FS flow.
+
+  Hot reload after changes:
+    fs_cli -x "reloadxml"
+
+  Telecom notes:
+    - continue_on_fail=true: if bridge fails, dialplan continues to hangup.lua
+    - hangup_after_bridge=false: inbound leg stays up after outbound leg drops
+      so we can play a "call ended" prompt before releasing the caller
+    - The bridge condition checks voip_gateway is set — prevents bridge attempt
+      if auth.lua returned early (insufficient credit, etc.)
+    - R-SIP-02: Voxbone SIP headers preserved via sip_copy_custom_headers
+-->
+<include>
+  <context name="default">
+
+    <!-- Inbound call from Voxbone DID — all numeric destinations -->
+    <extension name="voip_inbound" continue="false">
+      <condition field="destination_number" expression="^(\+?[0-9]{5,15})$">
+
+        <!-- Preserve all SIP headers through the bridge (R-SIP-02) -->
+        <action application="set" data="sip_copy_custom_headers=true"/>
+
+        <!-- Step 1: Authorize — collects PIN, calls FastAPI, sets voip_gateway -->
+        <action application="lua" data="dialplan/auth.lua"/>
+
+        <!-- Step 2: Bridge — only if auth.lua set voip_gateway (success path) -->
+        <!-- If auth.lua hung up, voip_gateway is empty and this condition is false -->
+        <action application="bridge"
+                data="sofia/gateway/${voip_gateway}/+${voip_destination_number}"
+                inline="false"/>
+
+        <!-- Step 3: Post-call — log hangup cause, set disposition for billing worker -->
+        <action application="lua" data="billing/hangup.lua"/>
+
+        <!-- Final hangup if not already disconnected -->
+        <action application="hangup" data="NORMAL_CLEARING"/>
+
+      </condition>
+    </extension>
+
+    <!-- Catch-all: non-numeric or very short destinations — reject cleanly -->
+    <extension name="voip_invalid">
+      <condition>
+        <action application="respond" data="404"/>
+      </condition>
+    </extension>
+
+  </context>
+</include>

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/umanda/workplace/ifonix/sofia/**)",
+      "Read(//home/umanda/workplace/ifonix/galaxy.2.0/helios/platform/Sites/Sentinel/**)"
+    ]
+  }
+}
